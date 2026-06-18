@@ -5,6 +5,7 @@ const express = require("express");
 const connectDatabase = require("./config/db");
 const { errorHandler, notFound } = require("./middlewares/errorMiddleware");
 const authRoutes = require("./routes/authRoutes");
+const orderRoutes = require("./routes/orderRoutes");
 const productRoutes = require("./routes/productRoutes");
 
 const app = express();
@@ -18,6 +19,7 @@ app.get("/api/health", (_req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/orders", orderRoutes);
 app.use("/api/products", productRoutes);
 
 app.use(notFound);

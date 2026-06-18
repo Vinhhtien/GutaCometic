@@ -1,4 +1,12 @@
 const mongoose = require("mongoose");
+const {
+  FULFILLMENT_TYPES,
+  ORDER_CHANNELS,
+  ORDER_STATUSES,
+  PAYMENT_METHODS,
+  PAYMENT_STATUSES,
+  values,
+} = require("../constants/business");
 
 const orderItemSchema = new mongoose.Schema(
   {
@@ -7,12 +15,32 @@ const orderItemSchema = new mongoose.Schema(
       ref: "Product",
       required: true,
     },
+    sku: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    image: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     quantity: {
       type: Number,
       required: true,
       min: 1,
     },
-    price: {
+    unitPrice: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    lineTotal: {
       type: Number,
       required: true,
       min: 0,
@@ -21,22 +49,109 @@ const orderItemSchema = new mongoose.Schema(
   { _id: false }
 );
 
+const statusHistorySchema = new mongoose.Schema(
+  {
+    status: {
+      type: String,
+      enum: values(ORDER_STATUSES),
+      required: true,
+    },
+    changedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    note: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    changedAt: {
+      type: Date,
+      default: Date.now,
+    },
+  },
+  { _id: false }
+);
+
+const addressSchema = new mongoose.Schema(
+  {
+    recipientName: { type: String, trim: true, default: "" },
+    phone: { type: String, trim: true, default: "" },
+    addressLine: { type: String, trim: true, default: "" },
+  },
+  { _id: false }
+);
+
 const orderSchema = new mongoose.Schema(
   {
+    orderCode: {
+      type: String,
+      required: true,
+      unique: true,
+      uppercase: true,
+      trim: true,
+    },
+    channel: {
+      type: String,
+      enum: values(ORDER_CHANNELS),
+      required: true,
+      index: true,
+    },
+    fulfillmentType: {
+      type: String,
+      enum: values(FULFILLMENT_TYPES),
+      required: true,
+    },
     customerId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "User",
-      required: true,
+      default: null,
+    },
+    customerName: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    customerPhone: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    shippingAddress: {
+      type: addressSchema,
+      default: null,
     },
     storeId: {
       type: mongoose.Schema.Types.ObjectId,
       ref: "Store",
       required: true,
+      index: true,
     },
     items: {
       type: [orderItemSchema],
       required: true,
       validate: [(items) => items.length > 0, "Order must contain items"],
+    },
+    subtotal: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+    discountAmount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    pointsUsed: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+    pointsEarned: {
+      type: Number,
+      default: 0,
+      min: 0,
     },
     totalPrice: {
       type: Number,
@@ -45,21 +160,110 @@ const orderSchema = new mongoose.Schema(
     },
     status: {
       type: String,
-      enum: ["PENDING", "READY_FOR_PICKUP", "COMPLETED", "CANCELLED"],
-      default: "PENDING",
-    },
-    orderType: {
-      type: String,
-      enum: ["ONLINE", "POS"],
+      enum: values(ORDER_STATUSES),
       required: true,
+      index: true,
     },
     paymentStatus: {
       type: String,
-      enum: ["UNPAID", "PAID", "REFUNDED"],
-      default: "UNPAID",
+      enum: values(PAYMENT_STATUSES),
+      default: PAYMENT_STATUSES.UNPAID,
+      index: true,
+    },
+    paymentMethod: {
+      type: String,
+      enum: values(PAYMENT_METHODS),
+      default: null,
+    },
+    inventoryReserved: {
+      type: Boolean,
+      default: false,
+    },
+    createdBySalesId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    approvedBySalesId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    paidByManagerId: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    cancelledBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    cancellationReason: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    statusHistory: {
+      type: [statusHistorySchema],
+      default: [],
+    },
+    paidAt: {
+      type: Date,
+      default: null,
+    },
+    completedAt: {
+      type: Date,
+      default: null,
+    },
+    cancelledAt: {
+      type: Date,
+      default: null,
     },
   },
   { timestamps: true }
 );
+
+orderSchema.index({ customerId: 1, createdAt: -1 });
+orderSchema.index({ storeId: 1, status: 1, createdAt: -1 });
+
+orderSchema.pre("validate", function validateOrder(next) {
+  const calculatedSubtotal = this.items.reduce(
+    (sum, item) => sum + item.unitPrice * item.quantity,
+    0
+  );
+
+  this.items.forEach((item) => {
+    item.lineTotal = item.unitPrice * item.quantity;
+  });
+  this.subtotal = calculatedSubtotal;
+  this.totalPrice = Math.max(0, calculatedSubtotal - this.discountAmount);
+
+  if (this.channel === ORDER_CHANNELS.ONLINE && !this.customerId) {
+    this.invalidate("customerId", "Online orders require a customer account");
+  }
+
+  if (
+    this.channel === ORDER_CHANNELS.OFFLINE &&
+    this.fulfillmentType !== FULFILLMENT_TYPES.IN_STORE
+  ) {
+    this.invalidate(
+      "fulfillmentType",
+      "Offline orders must use in-store fulfillment"
+    );
+  }
+
+  if (
+    this.fulfillmentType === FULFILLMENT_TYPES.DELIVERY &&
+    !this.shippingAddress?.addressLine
+  ) {
+    this.invalidate(
+      "shippingAddress",
+      "Delivery orders require a shipping address"
+    );
+  }
+
+  next();
+});
 
 module.exports = mongoose.model("Order", orderSchema);

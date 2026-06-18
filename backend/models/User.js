@@ -1,5 +1,6 @@
 const bcrypt = require("bcryptjs");
 const mongoose = require("mongoose");
+const { USER_ROLES, values } = require("../constants/business");
 
 const userSchema = new mongoose.Schema(
   {
@@ -24,8 +25,8 @@ const userSchema = new mongoose.Schema(
     },
     role: {
       type: String,
-      enum: ["OWNER", "MANAGER", "SALES", "CUSTOMER"],
-      default: "CUSTOMER",
+      enum: values(USER_ROLES),
+      default: USER_ROLES.CUSTOMER,
     },
     phone: {
       type: String,
@@ -75,5 +76,23 @@ userSchema.pre("save", async function hashPassword(next) {
 userSchema.methods.comparePassword = function comparePassword(candidatePassword) {
   return bcrypt.compare(candidatePassword, this.password);
 };
+
+userSchema.pre("validate", function validateStoreAssignment(next) {
+  if (
+    [USER_ROLES.MANAGER, USER_ROLES.SALES].includes(this.role) &&
+    !this.storeId
+  ) {
+    this.invalidate("storeId", "Manager and Sales users require a store");
+  }
+
+  if (
+    [USER_ROLES.OWNER, USER_ROLES.CUSTOMER].includes(this.role) &&
+    this.storeId
+  ) {
+    this.invalidate("storeId", "Owner and Customer users cannot have a store");
+  }
+
+  next();
+});
 
 module.exports = mongoose.model("User", userSchema);

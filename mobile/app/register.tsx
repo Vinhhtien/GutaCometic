@@ -1,3 +1,5 @@
+import { Ionicons } from "@expo/vector-icons";
+import { Link, Redirect, router } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -10,7 +12,7 @@ import {
   Text,
   View,
 } from "react-native";
-import { Link, Redirect, router } from "expo-router";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { FormInput } from "@/components/FormInput";
 import { useAuth } from "@/contexts/AuthContext";
 import { getErrorMessage } from "@/services/api";
@@ -57,157 +59,237 @@ export default function RegisterScreen() {
   };
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      style={styles.container}
-    >
-      <ScrollView
-        contentContainerStyle={styles.content}
-        keyboardShouldPersistTaps="handled"
+    <SafeAreaView style={styles.safeArea}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        style={styles.keyboardView}
       >
-        <View style={styles.card}>
-          <Text style={styles.eyebrow}>CREATE ACCOUNT</Text>
-          <Text style={styles.title}>Join GUTA Cosmetic</Text>
-          <Text style={styles.subtitle}>
-            Your new account starts with the Customer role.
-          </Text>
+        <ScrollView
+          contentContainerStyle={styles.content}
+          keyboardShouldPersistTaps="handled"
+        >
+          <View style={styles.header}>
+            <View style={styles.brandLine}>
+              <View style={styles.brandMark}>
+                <Ionicons color="#ffffff" name="leaf-outline" size={21} />
+              </View>
+              <Text style={styles.brand}>GUTA COSMETIC</Text>
+            </View>
+            <Text style={styles.headerTitle}>Create your account</Text>
+            <Text style={styles.headerCopy}>
+              Shop online, collect points and manage orders across every GUTA
+              store.
+            </Text>
+          </View>
 
-          <FormInput
-            autoComplete="name"
-            label="Full name"
-            onChangeText={setFullName}
-            placeholder="Nguyen Van A"
-            value={fullName}
-          />
-          <FormInput
-            autoCapitalize="none"
-            autoComplete="email"
-            keyboardType="email-address"
-            label="Email"
-            onChangeText={setEmail}
-            placeholder="you@example.com"
-            value={email}
-          />
-          <FormInput
-            autoCapitalize="none"
-            autoComplete="new-password"
-            label="Password"
-            onChangeText={setPassword}
-            placeholder="At least 6 characters"
-            secureTextEntry
-            value={password}
-          />
-          <FormInput
-            autoComplete="tel"
-            keyboardType="phone-pad"
-            label="Phone"
-            onChangeText={setPhone}
-            placeholder="0901234567"
-            value={phone}
-          />
-          <FormInput
-            autoComplete="street-address"
-            label="Address"
-            multiline
-            onChangeText={setAddress}
-            placeholder="Your delivery address"
-            value={address}
-          />
+          <View style={styles.formSection}>
+            <View style={styles.roleNotice}>
+              <Ionicons color="#2d5a4b" name="person-circle-outline" size={22} />
+              <View style={styles.roleNoticeCopy}>
+                <Text style={styles.roleNoticeTitle}>Customer membership</Text>
+                <Text style={styles.roleNoticeText}>
+                  Your account starts with the Customer role.
+                </Text>
+              </View>
+            </View>
 
-          <Pressable
-            disabled={isSubmitting}
-            onPress={handleRegister}
-            style={({ pressed }) => [
-              styles.button,
-              pressed && styles.buttonPressed,
-              isSubmitting && styles.buttonDisabled,
-            ]}
-          >
-            {isSubmitting ? (
-              <ActivityIndicator color="#ffffff" />
-            ) : (
-              <Text style={styles.buttonText}>Create account</Text>
-            )}
-          </Pressable>
+            <FormInput
+              autoComplete="name"
+              icon="person-outline"
+              label="Full name"
+              onChangeText={setFullName}
+              placeholder="Nguyen Van A"
+              value={fullName}
+            />
+            <FormInput
+              autoCapitalize="none"
+              autoComplete="email"
+              icon="mail-outline"
+              keyboardType="email-address"
+              label="Email address"
+              onChangeText={setEmail}
+              placeholder="you@example.com"
+              value={email}
+            />
+            <FormInput
+              autoCapitalize="none"
+              autoComplete="new-password"
+              icon="lock-closed-outline"
+              label="Password"
+              onChangeText={setPassword}
+              placeholder="At least 6 characters"
+              secureTextEntry
+              value={password}
+            />
+            <FormInput
+              autoComplete="tel"
+              icon="call-outline"
+              keyboardType="phone-pad"
+              label="Phone number"
+              onChangeText={setPhone}
+              placeholder="0901234567"
+              value={phone}
+            />
+            <FormInput
+              autoComplete="street-address"
+              icon="location-outline"
+              label="Delivery address"
+              multiline
+              onChangeText={setAddress}
+              placeholder="Enter your address"
+              value={address}
+            />
 
-          <Text style={styles.footer}>
-            Already registered?{" "}
-            <Link href="/login" style={styles.link}>
-              Sign in
-            </Link>
-          </Text>
-        </View>
-      </ScrollView>
-    </KeyboardAvoidingView>
+            <Pressable
+              disabled={isSubmitting}
+              onPress={handleRegister}
+              style={({ pressed }) => [
+                styles.button,
+                pressed && styles.buttonPressed,
+                isSubmitting && styles.buttonDisabled,
+              ]}
+            >
+              {isSubmitting ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <>
+                  <Text style={styles.buttonText}>Create account</Text>
+                  <Ionicons color="#ffffff" name="arrow-forward" size={18} />
+                </>
+              )}
+            </Pressable>
+
+            <View style={styles.footer}>
+              <Text style={styles.footerText}>Already registered?</Text>
+              <Link href="/login" style={styles.link}>
+                Sign in
+              </Link>
+            </View>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
+  safeArea: {
     flex: 1,
-    backgroundColor: "#fff1f5",
+    backgroundColor: "#ffffff",
+  },
+  keyboardView: {
+    flex: 1,
   },
   content: {
     flexGrow: 1,
-    justifyContent: "center",
-    padding: 24,
-    paddingVertical: 48,
-  },
-  card: {
-    borderRadius: 24,
-    padding: 24,
     backgroundColor: "#ffffff",
-    shadowColor: "#831843",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.1,
-    shadowRadius: 24,
-    elevation: 4,
   },
-  eyebrow: {
-    marginBottom: 10,
-    color: "#db2777",
-    fontSize: 12,
-    fontWeight: "800",
-    letterSpacing: 1.5,
+  header: {
+    padding: 26,
+    paddingTop: 24,
+    paddingBottom: 28,
+    backgroundColor: "#2d5a4b",
   },
-  title: {
-    color: "#172033",
-    fontSize: 30,
-    fontWeight: "800",
+  brandLine: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
   },
-  subtitle: {
-    marginTop: 8,
-    marginBottom: 24,
-    color: "#64748b",
-    fontSize: 15,
-    lineHeight: 22,
-  },
-  button: {
-    minHeight: 52,
+  brandMark: {
+    width: 38,
+    height: 38,
     alignItems: "center",
     justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.35)",
+    borderRadius: 7,
+  },
+  brand: {
+    color: "#ffffff",
+    fontSize: 16,
+    fontWeight: "900",
+    letterSpacing: 0,
+  },
+  headerTitle: {
+    marginTop: 25,
+    color: "#ffffff",
+    fontSize: 27,
+    fontWeight: "900",
+  },
+  headerCopy: {
+    maxWidth: 430,
     marginTop: 8,
-    borderRadius: 14,
-    backgroundColor: "#db2777",
+    color: "#d9e6e1",
+    fontSize: 14,
+    lineHeight: 21,
+  },
+  formSection: {
+    width: "100%",
+    maxWidth: 560,
+    alignSelf: "center",
+    padding: 25,
+    paddingTop: 26,
+    paddingBottom: 38,
+  },
+  roleNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+    marginBottom: 23,
+    borderWidth: 1,
+    borderColor: "#cbd9d4",
+    borderRadius: 8,
+    padding: 13,
+    backgroundColor: "#f0f6f3",
+  },
+  roleNoticeCopy: {
+    flex: 1,
+  },
+  roleNoticeTitle: {
+    color: "#284f42",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  roleNoticeText: {
+    marginTop: 2,
+    color: "#60736c",
+    fontSize: 12,
+  },
+  button: {
+    height: 54,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 9,
+    marginTop: 5,
+    borderRadius: 8,
+    backgroundColor: "#252525",
   },
   buttonPressed: {
-    opacity: 0.85,
+    opacity: 0.84,
   },
   buttonDisabled: {
-    opacity: 0.6,
+    opacity: 0.58,
   },
   buttonText: {
     color: "#ffffff",
-    fontSize: 16,
-    fontWeight: "700",
+    fontSize: 15,
+    fontWeight: "800",
   },
   footer: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 5,
     marginTop: 24,
-    color: "#64748b",
-    textAlign: "center",
+  },
+  footerText: {
+    color: "#777976",
+    fontSize: 13,
   },
   link: {
-    color: "#be185d",
-    fontWeight: "700",
+    color: "#c33e53",
+    fontSize: 13,
+    fontWeight: "800",
   },
 });

@@ -1,4 +1,5 @@
 const mongoose = require("mongoose");
+const { STORE_TYPES, values } = require("../constants/business");
 
 const storeSchema = new mongoose.Schema(
   {
@@ -9,7 +10,7 @@ const storeSchema = new mongoose.Schema(
     },
     type: {
       type: String,
-      enum: ["CENTRAL", "BRANCH"],
+      enum: values(STORE_TYPES),
       required: true,
     },
     address: {

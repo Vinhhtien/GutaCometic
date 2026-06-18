@@ -1,0 +1,63 @@
+const USER_ROLES = Object.freeze({
+  OWNER: "OWNER",
+  MANAGER: "MANAGER",
+  SALES: "SALES",
+  CUSTOMER: "CUSTOMER",
+});
+
+const STORE_TYPES = Object.freeze({
+  CENTRAL: "CENTRAL",
+  BRANCH: "BRANCH",
+});
+
+const ORDER_CHANNELS = Object.freeze({
+  ONLINE: "ONLINE",
+  OFFLINE: "OFFLINE",
+});
+
+const FULFILLMENT_TYPES = Object.freeze({
+  DELIVERY: "DELIVERY",
+  STORE_PICKUP: "STORE_PICKUP",
+  IN_STORE: "IN_STORE",
+});
+
+const ORDER_STATUSES = Object.freeze({
+  DRAFT: "DRAFT",
+  PENDING_APPROVAL: "PENDING_APPROVAL",
+  PENDING_PAYMENT: "PENDING_PAYMENT",
+  PENDING: "PENDING",
+  PAID: "PAID",
+  PREPARING: "PREPARING",
+  READY_FOR_PICKUP: "READY_FOR_PICKUP",
+  COMPLETED: "COMPLETED",
+  CANCELLED: "CANCELLED",
+});
+
+const PAYMENT_STATUSES = Object.freeze({
+  UNPAID: "UNPAID",
+  PAID: "PAID",
+  REFUNDED: "REFUNDED",
+  FAILED: "FAILED",
+});
+
+const PAYMENT_METHODS = Object.freeze({
+  CASH: "CASH",
+  CARD: "CARD",
+  BANK_TRANSFER: "BANK_TRANSFER",
+  COD: "COD",
+  ONLINE_PAYMENT: "ONLINE_PAYMENT",
+  PAY_AT_STORE: "PAY_AT_STORE",
+});
+
+const values = (constant) => Object.values(constant);
+
+module.exports = {
+  FULFILLMENT_TYPES,
+  ORDER_CHANNELS,
+  ORDER_STATUSES,
+  PAYMENT_METHODS,
+  PAYMENT_STATUSES,
+  STORE_TYPES,
+  USER_ROLES,
+  values,
+};

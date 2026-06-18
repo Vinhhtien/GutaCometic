@@ -1,6 +1,7 @@
 const mongoose = require("mongoose");
 
-const DEFAULT_LOCAL_MONGODB_URI = "mongodb://127.0.0.1:27017/guta_cosmetic_pos";
+const DEFAULT_LOCAL_MONGODB_URI =
+  "mongodb://127.0.0.1:27018/guta_cosmetic_pos?replicaSet=rs0";
 
 const connectDatabase = async () => {
   const mongoUri = process.env.MONGODB_URI || DEFAULT_LOCAL_MONGODB_URI;

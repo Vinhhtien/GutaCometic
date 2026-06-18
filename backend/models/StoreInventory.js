@@ -44,6 +44,8 @@ const storeInventorySchema = new mongoose.Schema(
 );
 
 storeInventorySchema.index({ storeId: 1, productId: 1 }, { unique: true });
+storeInventorySchema.index({ storeId: 1, availableStock: 1 });
+storeInventorySchema.index({ expiryDate: 1 });
 
 storeInventorySchema.pre("validate", function calculateAvailableStock(next) {
   this.availableStock = this.totalStock - this.reservedStock;

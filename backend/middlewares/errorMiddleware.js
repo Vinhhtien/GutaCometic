@@ -18,7 +18,11 @@ const errorHandler = (error, _req, res, _next) => {
     message = `${Object.keys(error.keyValue).join(", ")} already exists`;
   }
 
-  res.status(statusCode).json({ message });
+  res.status(statusCode).json({
+    message,
+    ...(error.code && error.code !== 11000 ? { code: error.code } : {}),
+    ...(error.details ? { details: error.details } : {}),
+  });
 };
 
 module.exports = {

@@ -1,19 +1,37 @@
+import { Ionicons } from "@expo/vector-icons";
 import { StyleSheet, Text, TextInput, TextInputProps, View } from "react-native";
 
 type FormInputProps = TextInputProps & {
+  icon?: keyof typeof Ionicons.glyphMap;
   label: string;
 };
 
-export function FormInput({ label, multiline, style, ...props }: FormInputProps) {
+export function FormInput({
+  icon,
+  label,
+  multiline,
+  style,
+  ...props
+}: FormInputProps) {
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
-      <TextInput
-        multiline={multiline}
-        placeholderTextColor="#94a3b8"
-        style={[styles.input, multiline && styles.multilineInput, style]}
-        {...props}
-      />
+      <View style={[styles.inputShell, multiline && styles.multilineShell]}>
+        {icon ? (
+          <Ionicons
+            color="#747673"
+            name={icon}
+            size={19}
+            style={multiline ? styles.multilineIcon : undefined}
+          />
+        ) : null}
+        <TextInput
+          multiline={multiline}
+          placeholderTextColor="#9a9c98"
+          style={[styles.input, multiline && styles.multilineInput, style]}
+          {...props}
+        />
+      </View>
     </View>
   );
 }
@@ -23,23 +41,37 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   label: {
-    marginBottom: 7,
-    color: "#334155",
-    fontSize: 14,
-    fontWeight: "700",
+    marginBottom: 8,
+    color: "#383a37",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  inputShell: {
+    minHeight: 52,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "#d9dad6",
+    borderRadius: 8,
+    paddingHorizontal: 14,
+    backgroundColor: "#ffffff",
+  },
+  multilineShell: {
+    alignItems: "flex-start",
+    minHeight: 92,
+  },
+  multilineIcon: {
+    marginTop: 15,
   },
   input: {
+    flex: 1,
     minHeight: 50,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
-    borderRadius: 13,
-    paddingHorizontal: 14,
-    color: "#172033",
-    fontSize: 16,
-    backgroundColor: "#f8fafc",
+    color: "#252525",
+    fontSize: 15,
   },
   multilineInput: {
-    minHeight: 86,
+    minHeight: 90,
     paddingTop: 14,
     textAlignVertical: "top",
   },

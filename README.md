@@ -34,6 +34,21 @@ Set `MONGODB_URI` in `backend/.env` when MongoDB is not running at the
 default local address. Change `JWT_SECRET` before using the project outside a
 local demo.
 
+Order and inventory workflows use MongoDB multi-document transactions. The
+backend automatically starts a project-local single-node replica set on port
+`27018` before `npm run dev`, `npm start`, and `npm test`. Its data is stored in
+`backend/.mongodb-rs-data`.
+
+To migrate existing local data from the old standalone database on port
+`27017`, run once:
+
+```powershell
+cd backend
+npm run db:start
+npm run db:migrate
+npm run check:transactions
+```
+
 ## 2. Mobile API connection
 
 The Expo Metro server proxies `/api/*` requests to the backend on port `5000`.
@@ -67,6 +82,26 @@ The backend must already be running. Scan the QR code with Expo Go.
 | `POST` | `/api/auth/login` | Public |
 | `GET` | `/api/auth/me` | Bearer token |
 | `GET` | `/api/products` | Bearer token |
+| `GET` | `/api/orders` | Bearer token, scoped by role |
+| `POST` | `/api/orders/online` | `CUSTOMER` |
+| `POST` | `/api/orders/offline` | `SALES`, assigned store |
+| `PATCH` | `/api/orders/:orderId/approve` | `SALES`, assigned store |
+| `PATCH` | `/api/orders/:orderId/pay` | `MANAGER`, assigned store |
+| `PATCH` | `/api/orders/:orderId/online-status` | `MANAGER`, assigned store |
+| `PATCH` | `/api/orders/:orderId/cancel` | Owner, assigned staff, or owning customer |
 
 Public registration always creates a `CUSTOMER`. Privileged roles should be
 assigned through a protected administration flow in a future phase.
+
+## Phase 1 business rules
+
+- Online orders reserve stock when they are created.
+- Sales creates an offline order, then approves it to reserve stock and send it
+  to the Manager payment queue.
+- Manager payment completes the POS sale and converts reserved stock into sold
+  stock.
+- Cancelling an order releases any reservation.
+- `MANAGER` and `SALES` users can only process their assigned `storeId`.
+- Customers only see their own orders. Staff only see their branch orders.
+  Owners can see all orders.
+- Mobile cart state is stored per signed-in user with AsyncStorage.

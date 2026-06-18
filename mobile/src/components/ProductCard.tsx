@@ -1,4 +1,5 @@
-import { Image, StyleSheet, Text, View } from "react-native";
+import { Ionicons } from "@expo/vector-icons";
+import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { Product } from "@/types/product";
 
 type ProductCardProps = {
@@ -11,26 +12,36 @@ const formatPrice = (price: number) =>
 export function ProductCard({ product }: ProductCardProps) {
   return (
     <View style={styles.card}>
-      {product.image ? (
-        <Image source={{ uri: product.image }} style={styles.image} />
-      ) : (
-        <View style={[styles.image, styles.imagePlaceholder]}>
-          <Text style={styles.placeholderText}>GUTA Cosmetic</Text>
-        </View>
-      )}
+      <View style={styles.media}>
+        {product.image ? (
+          <Image source={{ uri: product.image }} style={styles.image} />
+        ) : (
+          <View style={styles.imagePlaceholder}>
+            <Ionicons color="#c33e53" name="leaf-outline" size={29} />
+            <Text style={styles.placeholderText}>GUTA</Text>
+          </View>
+        )}
+        <Pressable accessibilityLabel="Save product" style={styles.favoriteButton}>
+          <Ionicons color="#40413f" name="heart-outline" size={18} />
+        </Pressable>
+      </View>
+
       <View style={styles.details}>
-        <Text style={styles.category}>{product.category}</Text>
+        <Text numberOfLines={1} style={styles.brand}>
+          {product.brand}
+        </Text>
         <Text numberOfLines={2} style={styles.name}>
           {product.name}
         </Text>
-        <Text style={styles.brand}>{product.brand}</Text>
         <Text style={styles.price}>{formatPrice(product.price)}</Text>
-        <View style={styles.tags}>
-          {product.skinTypes.slice(0, 3).map((skinType) => (
-            <View key={skinType} style={styles.tag}>
-              <Text style={styles.tagText}>{skinType}</Text>
-            </View>
-          ))}
+
+        <View style={styles.cardFooter}>
+          <Text numberOfLines={1} style={styles.category}>
+            {product.category}
+          </Text>
+          <Pressable accessibilityLabel="Add product" style={styles.addButton}>
+            <Ionicons color="#ffffff" name="add" size={19} />
+          </Pressable>
         </View>
       </View>
     </View>
@@ -39,77 +50,93 @@ export function ProductCard({ product }: ProductCardProps) {
 
 const styles = StyleSheet.create({
   card: {
-    flexDirection: "row",
+    flex: 1,
+    maxWidth: "49%",
     marginBottom: 14,
-    borderRadius: 18,
-    padding: 12,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#e1e2df",
+    borderRadius: 8,
     backgroundColor: "#ffffff",
-    shadowColor: "#0f172a",
-    shadowOffset: { width: 0, height: 3 },
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
-    elevation: 2,
+  },
+  media: {
+    position: "relative",
+    width: "100%",
+    aspectRatio: 0.92,
+    backgroundColor: "#f1f2ef",
   },
   image: {
-    width: 112,
-    minHeight: 148,
-    borderRadius: 14,
-    backgroundColor: "#fce7f3",
+    width: "100%",
+    height: "100%",
+    resizeMode: "cover",
   },
   imagePlaceholder: {
+    width: "100%",
+    height: "100%",
     alignItems: "center",
     justifyContent: "center",
+    gap: 5,
+    backgroundColor: "#fff0f2",
   },
   placeholderText: {
-    color: "#be185d",
-    fontSize: 12,
-    fontWeight: "800",
+    color: "#a93447",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  favoriteButton: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    width: 32,
+    height: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 6,
+    backgroundColor: "rgba(255,255,255,0.92)",
   },
   details: {
-    flex: 1,
-    paddingLeft: 14,
-    paddingVertical: 4,
+    minHeight: 142,
+    padding: 11,
   },
-  category: {
-    color: "#db2777",
-    fontSize: 11,
+  brand: {
+    color: "#858784",
+    fontSize: 10,
     fontWeight: "800",
-    letterSpacing: 0.7,
     textTransform: "uppercase",
   },
   name: {
+    minHeight: 38,
     marginTop: 5,
-    color: "#172033",
-    fontSize: 16,
-    fontWeight: "800",
-    lineHeight: 21,
-  },
-  brand: {
-    marginTop: 4,
-    color: "#64748b",
-    fontSize: 13,
+    color: "#2d2e2c",
+    fontSize: 14,
+    fontWeight: "700",
+    lineHeight: 19,
   },
   price: {
-    marginTop: 9,
-    color: "#9f1239",
-    fontSize: 15,
-    fontWeight: "800",
+    marginTop: 8,
+    color: "#c33e53",
+    fontSize: 13,
+    fontWeight: "900",
   },
-  tags: {
+  cardFooter: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 5,
+    alignItems: "center",
+    justifyContent: "space-between",
     marginTop: 10,
   },
-  tag: {
-    borderRadius: 999,
-    paddingHorizontal: 7,
-    paddingVertical: 4,
-    backgroundColor: "#f1f5f9",
-  },
-  tagText: {
-    color: "#475569",
+  category: {
+    flex: 1,
+    marginRight: 8,
+    color: "#6c6e6b",
     fontSize: 10,
-    fontWeight: "600",
+    fontWeight: "700",
+  },
+  addButton: {
+    width: 31,
+    height: 31,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 6,
+    backgroundColor: "#252525",
   },
 });

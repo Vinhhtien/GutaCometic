@@ -1,5 +1,6 @@
 const User = require("../models/User");
 const generateToken = require("../utils/generateToken");
+const { USER_ROLES } = require("../constants/business");
 
 const publicUserFields = "-password";
 
@@ -32,7 +33,7 @@ const register = async ({ fullName, email, password, phone, address }) => {
     password,
     phone,
     address,
-    role: "CUSTOMER",
+    role: USER_ROLES.CUSTOMER,
   });
 
   return createAuthResponse(user);
