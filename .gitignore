@@ -2,4 +2,6 @@
 **/.env
 mobile/.expo/
 mobile/dist/
+mobile/.claude/
+mobile/tunnel.*.log
 npm-debug.log*
