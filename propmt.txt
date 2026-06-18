@@ -1,0 +1,294 @@
+Bạn hãy đóng vai trò là Senior Full-stack Developer + System Architect.
+Tôi muốn bạn tạo dự án Mobile App demo cho hệ thống:
+
+# GUTA Cosmetic POS - Skincare Chain Store Management & Omnichannel Platform
+
+## 1. Mục tiêu dự án
+
+Đây là app quản lý chuỗi cửa hàng mỹ phẩm/skincare theo mô hình Omnichannel, gồm:
+
+* 01 Kho Tổng / Central Warehouse
+* Nhiều Chi nhánh / Branch Stores
+* Dùng chung 1 database MongoDB tập trung
+* Có phân quyền theo vai trò người dùng
+
+Công nghệ sử dụng:
+
+* Mobile: React Native + Expo Go + TypeScript
+* Backend: Node.js + Express.js
+* Database: MongoDB + Mongoose
+* Kiến trúc Backend: MVC
+* Mobile chỉ gọi API từ Backend, không truy cập MongoDB trực tiếp
+
+## 2. Role trong hệ thống
+
+Hệ thống có 4 role chính:
+
+1. OWNER
+
+* Chủ chuỗi
+* Quản lý toàn bộ hệ thống
+* Xem dashboard tổng
+* Quản lý sản phẩm, cửa hàng, nhân viên, tồn kho
+
+2. MANAGER
+
+* Quản lý 1 chi nhánh
+* Xử lý đơn hàng online
+* Thanh toán POS tại quầy
+* Xác nhận nhập hàng từ kho tổng
+
+3. SALES
+
+* Nhân viên tư vấn tại cửa hàng
+* Tra cứu sản phẩm
+* Lọc sản phẩm theo loại da
+* Tạo giỏ hàng tạm thời cho khách
+
+4. CUSTOMER
+
+* Khách hàng online
+* Đăng ký, đăng nhập
+* Xem sản phẩm
+* Đặt hàng
+* Tích điểm thành viên
+
+## 3. Database / Entity cần thiết kế
+
+### User
+
+* fullName: String
+* email: String, unique
+* password: String, hashed
+* role: OWNER | MANAGER | SALES | CUSTOMER
+* phone: String
+* address: String
+* storeId: ObjectId ref Store, optional
+* points: Number, default 0
+* isActive: Boolean, default true
+* createdAt: Date
+
+### Store
+
+* name: String
+* type: CENTRAL | BRANCH
+* address: String
+* phone: String
+* isActive: Boolean
+* createdAt: Date
+
+### Product
+
+Chỉ lưu thông tin định nghĩa sản phẩm, không lưu số lượng tồn kho.
+
+* sku: String, unique
+* name: String
+* brand: String
+* description: String
+* image: String
+* price: Number
+* category: String
+* skinTypes: [String]
+* isActive: Boolean
+* createdAt: Date
+
+### StoreInventory
+
+Lưu tồn kho theo từng chi nhánh.
+
+* storeId: ObjectId ref Store
+* productId: ObjectId ref Product
+* totalStock: Number
+* reservedStock: Number
+* availableStock: Number
+* expiryDate: Date
+* lowStockThreshold: Number
+
+Công thức:
+availableStock = totalStock - reservedStock
+
+### Order
+
+* customerId: ObjectId ref User
+* storeId: ObjectId ref Store
+* items: [
+  {
+  productId: ObjectId ref Product,
+  quantity: Number,
+  price: Number
+  }
+  ]
+* totalPrice: Number
+* status: PENDING | READY_FOR_PICKUP | COMPLETED | CANCELLED
+* orderType: ONLINE | POS
+* paymentStatus: UNPAID | PAID | REFUNDED
+* createdAt: Date
+
+### StockTransfer
+
+* fromStoreId: ObjectId ref Store
+* toStoreId: ObjectId ref Store
+* items: [
+  {
+  productId: ObjectId ref Product,
+  quantity: Number
+  }
+  ]
+* status: PENDING | CONFIRMED | CANCELLED
+* createdBy: ObjectId ref User
+* confirmedBy: ObjectId ref User
+* createdAt: Date
+
+## 4. Cấu trúc thư mục yêu cầu
+
+Tạo project gồm 2 phần:
+
+backend/
+
+* config/
+
+  * db.js
+* models/
+
+  * User.js
+  * Store.js
+  * Product.js
+  * StoreInventory.js
+  * Order.js
+  * StockTransfer.js
+* controllers/
+
+  * authController.js
+  * productController.js
+* services/
+
+  * authService.js
+  * productService.js
+* routes/
+
+  * authRoutes.js
+  * productRoutes.js
+* middlewares/
+
+  * authMiddleware.js
+* utils/
+
+  * generateToken.js
+* server.js
+* package.json
+* .env.example
+
+mobile/
+
+* app/
+
+  * _layout.tsx
+  * index.tsx
+  * login.tsx
+  * register.tsx
+  * home.tsx
+* src/
+
+  * components/
+  * contexts/
+
+    * AuthContext.tsx
+  * services/
+
+    * api.ts
+    * authService.ts
+    * productService.ts
+  * types/
+
+    * user.ts
+    * product.ts
+
+## 5. Chức năng cần code trước
+
+Làm hoàn chỉnh các chức năng sau:
+
+### Backend
+
+1. Register
+
+* Nhập fullName, email, password, phone, address
+* Mặc định role là CUSTOMER nếu không truyền role
+* Hash password bằng bcrypt
+* Kiểm tra email trùng
+* Trả về user + token
+
+2. Login
+
+* Kiểm tra email và password
+* Trả về user + JWT token
+* Không trả password về frontend
+
+3. Logout
+
+* Phía backend không cần lưu session
+* Mobile chỉ cần xóa token local
+
+4. Auth Middleware
+
+* Kiểm tra JWT token
+* Gắn user vào req.user
+
+5. Product demo API
+
+* GET /api/products
+* Trả về danh sách sản phẩm skincare demo từ MongoDB
+* Có thể tạo sẵn seed data hoặc hướng dẫn thêm data mẫu
+
+### Mobile
+
+1. Màn hình Register
+
+* Form: fullName, email, password, phone, address
+* Gọi API register
+* Register thành công thì chuyển về Home hoặc Login
+
+2. Màn hình Login
+
+* Form: email, password
+* Gọi API login
+* Lưu token và user bằng AsyncStorage
+* Login thành công chuyển sang Home
+
+3. AuthContext
+
+* Quản lý user, token, login, register, logout
+* Khi mở app kiểm tra AsyncStorage xem đã login chưa
+
+4. Home
+
+* Hiển thị thông tin user đang đăng nhập
+* Hiển thị role của user
+* Có nút Logout
+* Hiển thị danh sách sản phẩm demo từ API
+
+5. Logout
+
+* Xóa token và user khỏi AsyncStorage
+* Chuyển về Login
+
+## 6. Yêu cầu code
+
+Hãy tạo code đầy đủ từng file, ghi rõ đường dẫn file trước mỗi đoạn code.
+
+Yêu cầu:
+
+* Code chạy được bằng copy-paste
+* Có package.json cho backend
+* Có hướng dẫn cài đặt thư viện
+* Có hướng dẫn chạy backend và mobile
+* Có file .env.example
+* Có xử lý lỗi cơ bản
+* Có TypeScript type cho mobile
+* API base URL phải dễ chỉnh trong mobile/src/services/api.ts
+* Không làm quá nhiều chức năng nâng cao, chỉ tập trung Register, Login, Logout, Home, Product Demo trước
+
+## 7. Kết quả mong muốn
+
+Sau khi hoàn thành, tôi muốn chạy được flow:
+
+Mở app → Nếu chưa login thì vào Login → Chưa có tài khoản thì Register → Register/Login thành công → Vào Home → Xem thông tin user + danh sách sản phẩm demo → Bấm Logout → Quay lại Login.
