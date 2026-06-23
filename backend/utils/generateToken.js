@@ -10,4 +10,21 @@ const generateToken = (userId) => {
   });
 };
 
+generateToken.createPasswordResetToken = ({ challengeId, userId }) =>
+  jwt.sign(
+    {
+      challengeId,
+      purpose: "RESET_PASSWORD",
+      userId,
+    },
+    process.env.RESET_TOKEN_SECRET || process.env.JWT_SECRET,
+    { expiresIn: "10m" }
+  );
+
+generateToken.verifyPasswordResetToken = (token) =>
+  jwt.verify(
+    token,
+    process.env.RESET_TOKEN_SECRET || process.env.JWT_SECRET
+  );
+
 module.exports = generateToken;

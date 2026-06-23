@@ -2,11 +2,13 @@ import { Ionicons } from "@expo/vector-icons";
 import { StyleSheet, Text, TextInput, TextInputProps, View } from "react-native";
 
 type FormInputProps = TextInputProps & {
+  error?: string;
   icon?: keyof typeof Ionicons.glyphMap;
   label: string;
 };
 
 export function FormInput({
+  error,
   icon,
   label,
   multiline,
@@ -16,7 +18,13 @@ export function FormInput({
   return (
     <View style={styles.field}>
       <Text style={styles.label}>{label}</Text>
-      <View style={[styles.inputShell, multiline && styles.multilineShell]}>
+      <View
+        style={[
+          styles.inputShell,
+          multiline && styles.multilineShell,
+          error && styles.inputShellError,
+        ]}
+      >
         {icon ? (
           <Ionicons
             color="#747673"
@@ -32,6 +40,7 @@ export function FormInput({
           {...props}
         />
       </View>
+      {error ? <Text style={styles.errorText}>{error}</Text> : null}
     </View>
   );
 }
@@ -61,6 +70,9 @@ const styles = StyleSheet.create({
     alignItems: "flex-start",
     minHeight: 92,
   },
+  inputShellError: {
+    borderColor: "#c33e53",
+  },
   multilineIcon: {
     marginTop: 15,
   },
@@ -74,5 +86,11 @@ const styles = StyleSheet.create({
     minHeight: 90,
     paddingTop: 14,
     textAlignVertical: "top",
+  },
+  errorText: {
+    marginTop: 6,
+    color: "#b4233a",
+    fontSize: 11,
+    lineHeight: 15,
   },
 });

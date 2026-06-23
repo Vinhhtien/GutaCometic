@@ -1,7 +1,5 @@
 **/node_modules/
 **/.env
-backend/.mongodb-data/
-backend/.mongodb-rs-data/
 backend/*.log
 mobile/.expo/
 mobile/dist/

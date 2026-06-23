@@ -5,24 +5,22 @@
   "description": "GUTA Cosmetic POS demo API",
   "main": "server.js",
   "scripts": {
-    "predev": "node scripts/startReplicaSet.js",
     "dev": "nodemon server.js",
-    "prestart": "node scripts/startReplicaSet.js",
     "start": "node server.js",
     "seed": "node seed.js",
-    "pretest": "node scripts/startReplicaSet.js",
-    "test": "node --test tests/*.test.js",
     "check:transactions": "node scripts/checkTransactions.js",
-    "db:start": "node scripts/startReplicaSet.js",
-    "db:migrate": "node scripts/migrateLegacyDatabase.js"
+    "check:email": "node scripts/checkEmailOtp.js",
+    "db:sync-user-indexes": "node scripts/syncUserIndexes.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
     "express": "^5.1.0",
+    "google-auth-library": "^10.7.0",
     "jsonwebtoken": "^9.0.2",
-    "mongoose": "^8.16.1"
+    "mongoose": "^8.16.1",
+    "nodemailer": "^9.0.1"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

@@ -17,6 +17,19 @@ const protect = async (req, res, next) => {
       return res.status(401).json({ message: "User is unavailable" });
     }
 
+    const passwordChangedAtSeconds = user.passwordChangedAt
+      ? Math.floor(user.passwordChangedAt.getTime() / 1000)
+      : null;
+
+    if (
+      passwordChangedAtSeconds !== null &&
+      payload.iat < passwordChangedAtSeconds
+    ) {
+      return res.status(401).json({
+        message: "Password was changed. Please sign in again.",
+      });
+    }
+
     req.user = user;
     next();
   } catch (_error) {

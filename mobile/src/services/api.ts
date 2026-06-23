@@ -26,11 +26,20 @@ type ApiOptions = Omit<RequestInit, "body"> & {
 };
 
 export class ApiError extends Error {
+  code?: string;
+  details?: Record<string, unknown>;
   status: number;
 
-  constructor(message: string, status: number) {
+  constructor(
+    message: string,
+    status: number,
+    code?: string,
+    details?: Record<string, unknown>
+  ) {
     super(message);
     this.name = "ApiError";
+    this.code = code;
+    this.details = details;
     this.status = status;
   }
 }
@@ -51,11 +60,18 @@ export async function apiRequest<T>(
   });
 
   const data = (await response.json().catch(() => ({}))) as {
+    code?: string;
+    details?: Record<string, unknown>;
     message?: string;
   };
 
   if (!response.ok) {
-    throw new ApiError(data.message || "Request failed", response.status);
+    throw new ApiError(
+      data.message || "Request failed",
+      response.status,
+      data.code,
+      data.details
+    );
   }
 
   return data as T;

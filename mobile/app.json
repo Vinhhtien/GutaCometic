@@ -1,6 +1,7 @@
 {
   "expo": {
     "name": "GUTA Cosmetic POS",
+    "owner": "vinhhtien",
     "slug": "guta-cosmetic-pos",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -8,9 +9,14 @@
     "scheme": "guta-cosmetic",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "bundleIdentifier": "com.gutacosmetic.pos",
+      "icon": "./assets/expo.icon",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
     },
     "android": {
+      "package": "com.gutacosmetic.pos",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -39,6 +45,12 @@
     "experiments": {
       "typedRoutes": true,
       "reactCompiler": true
+    },
+    "extra": {
+      "router": {},
+      "eas": {
+        "projectId": "01257659-6104-4904-a5e0-2cebe6d32703"
+      }
     }
   }
 }

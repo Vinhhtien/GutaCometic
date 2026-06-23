@@ -2,7 +2,7 @@ const { spawn, spawnSync } = require("child_process");
 const path = require("path");
 
 const maxAttempts = 4;
-const retryDelayMs = 3000;
+const retryDelaysMs = [3000, 6000, 12000];
 const expoCli = path.join(
   __dirname,
   "..",
@@ -39,7 +39,6 @@ const startTunnel = (attempt) =>
         "start",
         "--go",
         "--tunnel",
-        "--clear",
         "--port",
         "8081",
       ],
@@ -78,6 +77,7 @@ const main = async () => {
       return;
     }
 
+    const retryDelayMs = retryDelaysMs[attempt - 1];
     console.log(`Tunnel disconnected. Retrying in ${retryDelayMs / 1000}s...`);
     await wait(retryDelayMs);
   }

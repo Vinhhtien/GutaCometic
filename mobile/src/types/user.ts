@@ -5,8 +5,9 @@ export type User = {
   fullName: string;
   email: string;
   role: UserRole;
-  phone: string;
-  address: string;
+  phone?: string;
+  emailVerified?: boolean;
+  address?: string;
   storeId?: string | null;
   points: number;
   isActive: boolean;
@@ -15,14 +16,35 @@ export type User = {
 };
 
 export type LoginPayload = {
-  email: string;
+  identifier: string;
   password: string;
 };
 
-export type RegisterPayload = LoginPayload & {
+export type RegisterPayload = {
   fullName: string;
+  email: string;
+  password: string;
+  confirmPassword: string;
   phone: string;
   address: string;
+};
+
+export type OtpRequestResponse = {
+  challengeId: string;
+  channel?: "EMAIL" | "PHONE";
+  deliveryTarget: string;
+  developmentOtp?: string;
+  expiresIn: number;
+};
+
+export type VerifyRegistrationOtpPayload = {
+  challengeId: string;
+  otp: string;
+};
+
+export type VerifyResetOtpResponse = {
+  resetToken: string;
+  expiresIn: number;
 };
 
 export type AuthResponse = {
