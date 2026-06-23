@@ -71,15 +71,15 @@ Create one OAuth client in Google Cloud Console with application type
 https://auth.expo.io/@vinhhtien/guta-cosmetic-pos
 ```
 
-Set the web client ID in `backend/.env`:
+The shared development Web Client ID is included in the project. Override it
+in `backend/.env` only when using a different Google Cloud project:
 
 ```env
 GOOGLE_CLIENT_IDS=your_web_client_id.apps.googleusercontent.com
 ```
 
-Copy `mobile/.env.example` to `mobile/.env`, enter the same Web Client ID, then
-restart Expo with `npm run tunnel`. No Apple Developer account or iOS build is
-required for this Expo Go flow.
+The mobile app uses the same development Client ID by default. No Apple
+Developer account or iOS build is required for this Expo Go flow.
 
 ## Demo flow
 

@@ -3,8 +3,11 @@ const AppError = require("../utils/AppError");
 
 const client = new OAuth2Client();
 
+const DEFAULT_GOOGLE_CLIENT_ID =
+  "550502262089-4ehta6ckc0daipi9i32g5kinsd7jfi8g.apps.googleusercontent.com";
+
 const getClientIds = () =>
-  (process.env.GOOGLE_CLIENT_IDS || "")
+  (process.env.GOOGLE_CLIENT_IDS || DEFAULT_GOOGLE_CLIENT_ID)
     .split(",")
     .map((value) => value.trim())
     .filter(Boolean);
