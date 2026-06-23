@@ -6,15 +6,14 @@ const discovery: AuthSession.DiscoveryDocument = {
   authorizationEndpoint: "https://accounts.google.com/o/oauth2/v2/auth",
 };
 
+const defaultGoogleWebClientId =
+  "550502262089-4ehta6ckc0daipi9i32g5kinsd7jfi8g.apps.googleusercontent.com";
 const expoProjectFullName = "@vinhhtien/guta-cosmetic-pos";
 export const googleExpoRedirectUri = `https://auth.expo.io/${expoProjectFullName}`;
 
 export async function getGoogleIdToken() {
-  const clientId = process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID;
-
-  if (!clientId) {
-    throw new Error("Google Sign-In client ID is not configured.");
-  }
+  const clientId =
+    process.env.EXPO_PUBLIC_GOOGLE_WEB_CLIENT_ID || defaultGoogleWebClientId;
 
   const returnUrl = AuthSession.getDefaultReturnUrl();
   const request = new AuthSession.AuthRequest({
