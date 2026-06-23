@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Link, Redirect, router } from "expo-router";
+import { Href, Link, Redirect, router } from "expo-router";
 import { useState } from "react";
 import {
   ActivityIndicator,
@@ -16,31 +16,54 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { FormInput } from "@/components/FormInput";
 import { useAuth } from "@/contexts/AuthContext";
 import { getErrorMessage } from "@/services/api";
+import { getGoogleIdToken } from "@/services/googleSignIn";
+import { validateLoginIdentifier } from "@/utils/authValidation";
 
 export default function LoginScreen() {
-  const { isLoading, login, user } = useAuth();
-  const [email, setEmail] = useState("");
+  const { isLoading, login, loginWithGoogle, user } = useAuth();
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [identifierError, setIdentifierError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
 
   if (!isLoading && user) {
     return <Redirect href="/home" />;
   }
 
   const handleLogin = async () => {
-    if (!email.trim() || !password) {
-      Alert.alert("Missing information", "Enter your email and password.");
+    const validationError = validateLoginIdentifier(identifier);
+    setIdentifierError(validationError);
+
+    if (validationError || !password) {
+      Alert.alert(
+        "Invalid information",
+        validationError || "Enter your password."
+      );
       return;
     }
 
     try {
       setIsSubmitting(true);
-      await login(email, password);
+      await login(identifier, password);
       router.replace("/home");
     } catch (error) {
       Alert.alert("Login failed", getErrorMessage(error));
     } finally {
       setIsSubmitting(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    try {
+      setIsGoogleSubmitting(true);
+      const idToken = await getGoogleIdToken();
+      await loginWithGoogle(idToken);
+      router.replace("/home");
+    } catch (error) {
+      Alert.alert("Google Sign-In failed", getErrorMessage(error));
+    } finally {
+      setIsGoogleSubmitting(false);
     }
   };
 
@@ -75,13 +98,15 @@ export default function LoginScreen() {
             <View style={styles.form}>
               <FormInput
                 autoCapitalize="none"
-                autoComplete="email"
-                icon="mail-outline"
-                keyboardType="email-address"
-                label="Email address"
-                onChangeText={setEmail}
-                placeholder="you@example.com"
-                value={email}
+                error={identifierError}
+                icon="person-outline"
+                label="Gmail or phone number"
+                onChangeText={(value) => {
+                  setIdentifier(value);
+                  setIdentifierError("");
+                }}
+                placeholder="you@gmail.com or 0901234567"
+                value={identifier}
               />
               <FormInput
                 autoCapitalize="none"
@@ -94,9 +119,12 @@ export default function LoginScreen() {
                 value={password}
               />
 
-              <Pressable style={styles.forgotButton}>
-                <Text style={styles.forgotText}>Forgot password?</Text>
-              </Pressable>
+              <Link
+                href={"/forgot-password" as Href}
+                style={[styles.forgotButton, styles.forgotText]}
+              >
+                Forgot password?
+              </Link>
 
               <Pressable
                 disabled={isSubmitting}
@@ -113,6 +141,33 @@ export default function LoginScreen() {
                   <>
                     <Text style={styles.buttonText}>Sign in</Text>
                     <Ionicons color="#ffffff" name="arrow-forward" size={18} />
+                  </>
+                )}
+              </Pressable>
+
+              <View style={styles.divider}>
+                <View style={styles.dividerLine} />
+                <Text style={styles.dividerText}>OR</Text>
+                <View style={styles.dividerLine} />
+              </View>
+
+              <Pressable
+                disabled={isGoogleSubmitting}
+                onPress={handleGoogleLogin}
+                style={({ pressed }) => [
+                  styles.googleButton,
+                  pressed && styles.buttonPressed,
+                  isGoogleSubmitting && styles.buttonDisabled,
+                ]}
+              >
+                {isGoogleSubmitting ? (
+                  <ActivityIndicator color="#252525" />
+                ) : (
+                  <>
+                    <Ionicons color="#4285f4" name="logo-google" size={20} />
+                    <Text style={styles.googleButtonText}>
+                      Continue with Google
+                    </Text>
                   </>
                 )}
               </Pressable>
@@ -241,6 +296,26 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "800",
   },
+  divider: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginVertical: 18,
+  },
+  dividerLine: { flex: 1, height: 1, backgroundColor: "#d9dddb" },
+  dividerText: { color: "#868b88", fontSize: 11, fontWeight: "800" },
+  googleButton: {
+    height: 54,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 10,
+    borderWidth: 1,
+    borderColor: "#ccd2cf",
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+  },
+  googleButtonText: { color: "#252525", fontSize: 14, fontWeight: "800" },
   footer: {
     flexDirection: "row",
     flexWrap: "wrap",

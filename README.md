@@ -6,7 +6,7 @@ GUTA Cosmetic POS is a demo omnichannel skincare application with:
 - Node.js and Express REST API
 - MongoDB and Mongoose data models
 - JWT authentication persisted with AsyncStorage
-- Register, login, logout, profile, and demo product list flows
+- Gmail OTP registration, login, password recovery, profile, and product flows
 
 ## Prerequisites
 
@@ -30,24 +30,16 @@ The API runs at `http://localhost:5000`. Test it with:
 GET http://localhost:5000/api/health
 ```
 
-Set `MONGODB_URI` in `backend/.env` when MongoDB is not running at the
-default local address. Change `JWT_SECRET` before using the project outside a
-local demo.
-
 Order and inventory workflows use MongoDB multi-document transactions. The
-backend automatically starts a project-local single-node replica set on port
-`27018` before `npm run dev`, `npm start`, and `npm test`. Its data is stored in
-`backend/.mongodb-rs-data`.
+local MongoDB service runs as a single-node replica set named `rs0` on port
+`27017`. Set the backend connection in `backend/.env`:
 
-To migrate existing local data from the old standalone database on port
-`27017`, run once:
-
-```powershell
-cd backend
-npm run db:start
-npm run db:migrate
-npm run check:transactions
+```env
+MONGODB_URI=mongodb://127.0.0.1:27017/guta_cosmetic_pos?replicaSet=rs0
 ```
+
+Change `JWT_SECRET` before using the project outside a local demo. Run
+`npm run check:transactions` to verify the replica set configuration.
 
 ## 2. Mobile API connection
 
@@ -66,20 +58,62 @@ npm run tunnel
 
 The backend must already be running. Scan the QR code with Expo Go.
 
+## Google Sign-In
+
+Google Sign-In automatically creates a `CUSTOMER` account on first login and
+links an existing account when Google returns the same verified Gmail address.
+It uses browser OAuth through the Expo AuthSession proxy and runs in Expo Go.
+
+Create one OAuth client in Google Cloud Console with application type
+`Web application`. Add this authorized redirect URI:
+
+```text
+https://auth.expo.io/@vinhhtien/guta-cosmetic-pos
+```
+
+Set the web client ID in `backend/.env`:
+
+```env
+GOOGLE_CLIENT_IDS=your_web_client_id.apps.googleusercontent.com
+```
+
+Copy `mobile/.env.example` to `mobile/.env`, enter the same Web Client ID, then
+restart Expo with `npm run tunnel`. No Apple Developer account or iOS build is
+required for this Expo Go flow.
+
 ## Demo flow
 
 1. Open the app. It redirects to Login when no session is stored.
-2. Open Register and create a customer account.
-3. Registration stores the JWT and user, then opens Home.
+2. Open Register, enter the required Gmail address and phone number, then
+   request the Gmail OTP.
+3. Enter the OTP received by email. The account is only created after OTP
+   verification, then the app stores the JWT and opens Home.
 4. Home displays the current user, role, and seeded products.
 5. Logout clears AsyncStorage and returns to Login.
+
+With `OTP_MODE=development`, OTP request responses include `developmentOtp` so
+the flow can be tested without SMS or email services. Do not enable this mode
+in production.
+
+For real Gmail delivery, set `OTP_MODE=production` and configure:
+
+- Gmail: `SMTP_HOST`, `SMTP_PORT`, `SMTP_SECURE`, `SMTP_USER`, `SMTP_PASS`,
+  and `OTP_EMAIL_FROM`. Gmail SMTP requires a Google App Password.
+Registration uses Gmail OTP only. Password recovery accepts Gmail or phone as
+the account identifier, but always delivers the code to the Gmail stored on
+that account.
 
 ## API routes
 
 | Method | Route | Authentication |
 | --- | --- | --- |
-| `POST` | `/api/auth/register` | Public |
+| `POST` | `/api/auth/register/request-otp` | Public |
+| `POST` | `/api/auth/register/verify-otp` | Public |
 | `POST` | `/api/auth/login` | Public |
+| `POST` | `/api/auth/google` | Public, Google ID token |
+| `POST` | `/api/auth/password/forgot/request-otp` | Public |
+| `POST` | `/api/auth/password/forgot/verify-otp` | Public |
+| `POST` | `/api/auth/password/reset` | Public, reset token |
 | `GET` | `/api/auth/me` | Bearer token |
 | `GET` | `/api/products` | Bearer token |
 | `GET` | `/api/orders` | Bearer token, scoped by role |

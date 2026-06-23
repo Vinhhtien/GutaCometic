@@ -7,7 +7,11 @@ import {
   useState,
 } from "react";
 import * as authService from "@/services/authService";
-import { RegisterPayload, User } from "@/types/user";
+import {
+  OtpRequestResponse,
+  RegisterPayload,
+  User,
+} from "@/types/user";
 
 const TOKEN_STORAGE_KEY = "guta_cosmetic_token";
 const USER_STORAGE_KEY = "guta_cosmetic_user";
@@ -16,9 +20,16 @@ type AuthContextValue = {
   isLoading: boolean;
   token: string | null;
   user: User | null;
-  login: (email: string, password: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<void>;
+  loginWithGoogle: (idToken: string) => Promise<void>;
   logout: () => Promise<void>;
-  register: (payload: RegisterPayload) => Promise<void>;
+  requestRegistrationOtp: (
+    payload: RegisterPayload
+  ) => Promise<OtpRequestResponse>;
+  verifyRegistrationOtp: (
+    challengeId: string,
+    otp: string
+  ) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -59,13 +70,27 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setToken(nextToken);
   };
 
-  const login = async (email: string, password: string) => {
-    const response = await authService.login({ email, password });
+  const login = async (identifier: string, password: string) => {
+    const response = await authService.login({ identifier, password });
     await persistSession(response.user, response.token);
   };
 
-  const register = async (payload: RegisterPayload) => {
-    const response = await authService.register(payload);
+  const loginWithGoogle = async (idToken: string) => {
+    const response = await authService.loginWithGoogle(idToken);
+    await persistSession(response.user, response.token);
+  };
+
+  const requestRegistrationOtp = (payload: RegisterPayload) =>
+    authService.requestRegistrationOtp(payload);
+
+  const verifyRegistrationOtp = async (
+    challengeId: string,
+    otp: string
+  ) => {
+    const response = await authService.verifyRegistrationOtp({
+      challengeId,
+      otp,
+    });
     await persistSession(response.user, response.token);
   };
 
@@ -77,7 +102,16 @@ export function AuthProvider({ children }: PropsWithChildren) {
 
   return (
     <AuthContext.Provider
-      value={{ isLoading, login, logout, register, token, user }}
+      value={{
+        isLoading,
+        login,
+        loginWithGoogle,
+        logout,
+        requestRegistrationOtp,
+        token,
+        user,
+        verifyRegistrationOtp,
+      }}
     >
       {children}
     </AuthContext.Provider>

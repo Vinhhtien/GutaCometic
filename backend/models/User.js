@@ -19,7 +19,9 @@ const userSchema = new mongoose.Schema(
     },
     password: {
       type: String,
-      required: [true, "Password is required"],
+      required() {
+        return this.authProvider === "LOCAL";
+      },
       minlength: [6, "Password must be at least 6 characters"],
       select: false,
     },
@@ -30,13 +32,45 @@ const userSchema = new mongoose.Schema(
     },
     phone: {
       type: String,
-      required: [true, "Phone is required"],
+      required() {
+        return this.authProvider === "LOCAL";
+      },
+      unique: true,
+      sparse: true,
       trim: true,
+      default: undefined,
+    },
+    emailVerified: {
+      type: Boolean,
+      default: false,
+    },
+    authProvider: {
+      type: String,
+      enum: ["LOCAL", "GOOGLE"],
+      default: "LOCAL",
+    },
+    googleId: {
+      type: String,
+      unique: true,
+      sparse: true,
+      default: undefined,
+    },
+    avatarUrl: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    passwordChangedAt: {
+      type: Date,
+      default: null,
     },
     address: {
       type: String,
-      required: [true, "Address is required"],
+      required() {
+        return this.authProvider === "LOCAL";
+      },
       trim: true,
+      default: undefined,
     },
     storeId: {
       type: mongoose.Schema.Types.ObjectId,
@@ -66,6 +100,10 @@ const userSchema = new mongoose.Schema(
 
 userSchema.pre("save", async function hashPassword(next) {
   if (!this.isModified("password")) {
+    return next();
+  }
+
+  if (this.$locals.passwordAlreadyHashed) {
     return next();
   }
 
