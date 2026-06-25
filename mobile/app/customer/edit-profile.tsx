@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
-import { useState } from "react";
+import { router, useFocusEffect } from "expo-router";
+import { useCallback, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -27,12 +27,30 @@ export default function EditProfileScreen() {
   const [isSaving, setIsSaving] = useState(false);
   const [isSuccessVisible, setIsSuccessVisible] = useState(false);
 
+  useFocusEffect(
+    useCallback(() => {
+      if (user) {
+        setFullName(user.fullName ?? "");
+        setPhone(user.phone ?? "");
+        setAddress(user.address ?? "");
+      }
+    }, [user])
+  );
+
   if (!user) {
     return null;
   }
 
   const isGoldMember = user.points >= 1000;
   const initials = user.fullName.trim().charAt(0).toUpperCase();
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.push("/customer/profile");
+    }
+  };
 
   const handleSave = async () => {
     if (!token || isSaving) {
@@ -56,7 +74,7 @@ export default function EditProfileScreen() {
       <View style={styles.header}>
         <Pressable
           accessibilityLabel="Back"
-          onPress={() => router.back()}
+          onPress={handleBack}
           style={styles.backButton}
         >
           <Ionicons color="#252525" name="arrow-back" size={22} />

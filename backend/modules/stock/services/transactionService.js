@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const AppError = require("../../utils/AppError");
+const AppError = require("../../../utils/AppError");
 
 const isTransactionUnsupported = (error) =>
   error?.code === 20 ||

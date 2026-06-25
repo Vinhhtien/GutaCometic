@@ -1,5 +1,5 @@
 const { OAuth2Client } = require("google-auth-library");
-const AppError = require("../../utils/AppError");
+const AppError = require("../../../utils/AppError");
 
 const client = new OAuth2Client();
 

@@ -1,6 +1,6 @@
 const nodemailer = require("nodemailer");
-const AppError = require("../../utils/AppError");
-const { OTP_CHANNELS, OTP_PURPOSES } = require("../../constants/auth");
+const AppError = require("../../../utils/AppError");
+const { OTP_CHANNELS, OTP_PURPOSES } = require("../../../constants/auth");
 
 let emailTransporter;
 

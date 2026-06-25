@@ -1,11 +1,11 @@
 const express = require("express");
-const orderController = require("./orderController");
-const protect = require("../../middlewares/authMiddleware");
+const orderController = require("../controllers/orderController");
+const protect = require("../../../middlewares/authMiddleware");
 const {
   authorize,
   requireAssignedStore,
-} = require("../../middlewares/roleMiddleware");
-const { USER_ROLES } = require("../../constants/business");
+} = require("../../../middlewares/roleMiddleware");
+const { USER_ROLES } = require("../../../constants/business");
 
 const router = express.Router();
 

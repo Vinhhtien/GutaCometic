@@ -1,10 +1,10 @@
-const User = require("../../models/User");
-const AppError = require("../../utils/AppError");
+const User = require("../../../models/User");
+const AppError = require("../../../utils/AppError");
 const {
   normalizePhone,
   validateAddress,
   validateFullName,
-} = require("../../utils/authValidation");
+} = require("../../../utils/authValidation");
 
 const updateProfile = async (userId, payload) => {
   const user = await User.findById(userId);

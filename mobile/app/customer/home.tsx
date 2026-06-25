@@ -3,7 +3,6 @@ import { Redirect, router } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   ImageBackground,
   Pressable,
@@ -38,7 +37,7 @@ const categories = [
 ];
 
 export default function HomeScreen() {
-  const { isLoading, logout, token, user } = useAuth();
+  const { isLoading, token, user } = useAuth();
   const { itemCount, subtotal } = useCart();
   const [products, setProducts] = useState<Product[]>([]);
   const [error, setError] = useState("");
@@ -83,20 +82,6 @@ export default function HomeScreen() {
   const handleRefresh = () => {
     setIsRefreshing(true);
     loadProducts();
-  };
-
-  const handleAccountPress = () => {
-    Alert.alert(user.fullName, user.email, [
-      { text: "Close", style: "cancel" },
-      {
-        text: "Sign out",
-        style: "destructive",
-        onPress: async () => {
-          await logout();
-          router.replace("/auth/login");
-        },
-      },
-    ]);
   };
 
   return (
@@ -145,7 +130,11 @@ export default function HomeScreen() {
                   <Ionicons color="#252525" name="notifications-outline" size={22} />
                   <View style={styles.notificationDot} />
                 </Pressable>
-                <Pressable onPress={handleAccountPress} style={styles.avatar}>
+                <Pressable
+                  accessibilityLabel="Sửa thông tin cá nhân"
+                  onPress={() => router.push("/customer/edit-profile")}
+                  style={styles.avatar}
+                >
                   <Text style={styles.avatarText}>
                     {user.fullName.trim().charAt(0).toUpperCase()}
                   </Text>

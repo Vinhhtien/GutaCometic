@@ -1,5 +1,5 @@
 const jwt = require("jsonwebtoken");
-const authService = require("../modules/auth/authService");
+const authService = require("../modules/auth/services/authService");
 
 const protect = async (req, res, next) => {
   try {
