@@ -1,10 +1,10 @@
 const crypto = require("crypto");
 const mongoose = require("mongoose");
-const Order = require("../models/Order");
-const Product = require("../models/Product");
-const AppError = require("../utils/AppError");
-const inventoryService = require("./inventoryService");
-const { runInTransaction } = require("./transactionService");
+const Order = require("../../models/Order");
+const Product = require("../../models/Product");
+const AppError = require("../../utils/AppError");
+const inventoryService = require("../stock/inventoryService");
+const { runInTransaction } = require("../stock/transactionService");
 const {
   FULFILLMENT_TYPES,
   ORDER_CHANNELS,
@@ -12,7 +12,7 @@ const {
   PAYMENT_METHODS,
   PAYMENT_STATUSES,
   USER_ROLES,
-} = require("../constants/business");
+} = require("../../constants/business");
 
 const generateOrderCode = () => {
   const date = new Date().toISOString().slice(0, 10).replaceAll("-", "");

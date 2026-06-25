@@ -1,4 +1,4 @@
-const authService = require("../services/authService");
+const authService = require("./authService");
 
 const requestRegistrationOtp = async (req, res, next) => {
   try {

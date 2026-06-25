@@ -13,7 +13,7 @@ export default function IndexScreen() {
     );
   }
 
-  return <Redirect href={user ? "/home" : "/login"} />;
+  return <Redirect href={user ? "/customer/home" : "/auth/login"} />;
 }
 
 const styles = StyleSheet.create({

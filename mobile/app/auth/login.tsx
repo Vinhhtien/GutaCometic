@@ -28,7 +28,7 @@ export default function LoginScreen() {
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
 
   if (!isLoading && user) {
-    return <Redirect href="/home" />;
+    return <Redirect href="/customer/home" />;
   }
 
   const handleLogin = async () => {
@@ -46,7 +46,7 @@ export default function LoginScreen() {
     try {
       setIsSubmitting(true);
       await login(identifier, password);
-      router.replace("/home");
+      router.replace("/customer/home");
     } catch (error) {
       Alert.alert("Login failed", getErrorMessage(error));
     } finally {
@@ -59,7 +59,7 @@ export default function LoginScreen() {
       setIsGoogleSubmitting(true);
       const idToken = await getGoogleIdToken();
       await loginWithGoogle(idToken);
-      router.replace("/home");
+      router.replace("/customer/home");
     } catch (error) {
       Alert.alert("Google Sign-In failed", getErrorMessage(error));
     } finally {
@@ -120,7 +120,7 @@ export default function LoginScreen() {
               />
 
               <Link
-                href={"/forgot-password" as Href}
+                href={"/auth/forgot-password" as Href}
                 style={[styles.forgotButton, styles.forgotText]}
               >
                 Forgot password?
@@ -175,7 +175,7 @@ export default function LoginScreen() {
 
             <View style={styles.footer}>
               <Text style={styles.footerText}>New to GUTA Cosmetic?</Text>
-              <Link href="/register" style={styles.link}>
+              <Link href="/auth/register" style={styles.link}>
                 Create an account
               </Link>
             </View>

@@ -46,7 +46,7 @@ export default function RegisterScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   if (!isLoading && user) {
-    return <Redirect href="/home" />;
+    return <Redirect href="/customer/home" />;
   }
 
   const registrationPayload = {
@@ -92,7 +92,7 @@ export default function RegisterScreen() {
     try {
       setIsSubmitting(true);
       await verifyRegistrationOtp(challengeId, otp);
-      router.replace("/home");
+      router.replace("/customer/home");
     } catch (error) {
       Alert.alert("OTP verification failed", getErrorMessage(error));
     } finally {
@@ -271,7 +271,7 @@ export default function RegisterScreen() {
 
             <View style={styles.footer}>
               <Text style={styles.footerText}>Already registered?</Text>
-              <Link href="/login" style={styles.link}>
+              <Link href="/auth/login" style={styles.link}>
                 Sign in
               </Link>
             </View>

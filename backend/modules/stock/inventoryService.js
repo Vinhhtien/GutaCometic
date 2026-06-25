@@ -1,5 +1,5 @@
-const StoreInventory = require("../models/StoreInventory");
-const AppError = require("../utils/AppError");
+const StoreInventory = require("../../models/StoreInventory");
+const AppError = require("../../utils/AppError");
 
 const normalizeItems = (items) => {
   if (!Array.isArray(items) || items.length === 0) {

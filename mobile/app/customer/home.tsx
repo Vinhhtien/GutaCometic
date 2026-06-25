@@ -37,13 +37,6 @@ const categories = [
   "Sunscreen",
 ];
 
-const bottomNavigation = [
-  { label: "Home", icon: "home" },
-  { label: "Explore", icon: "grid-outline" },
-  { label: "Orders", icon: "receipt-outline" },
-  { label: "Account", icon: "person-outline" },
-] as const;
-
 export default function HomeScreen() {
   const { isLoading, logout, token, user } = useAuth();
   const { itemCount, subtotal } = useCart();
@@ -76,7 +69,7 @@ export default function HomeScreen() {
   }, [loadProducts]);
 
   if (!isLoading && !user) {
-    return <Redirect href="/login" />;
+    return <Redirect href="/auth/login" />;
   }
 
   if (isLoading || !user) {
@@ -100,7 +93,7 @@ export default function HomeScreen() {
         style: "destructive",
         onPress: async () => {
           await logout();
-          router.replace("/login");
+          router.replace("/auth/login");
         },
       },
     ]);
@@ -277,8 +270,8 @@ export default function HomeScreen() {
         style={styles.screen}
       />
 
-      <View style={styles.bottomDock}>
-        {itemCount > 0 ? (
+      {itemCount > 0 ? (
+        <View style={styles.bottomDock}>
           <Pressable style={styles.cartBar}>
             <View style={styles.cartIconWrap}>
               <Ionicons color="#ffffff" name="bag-handle" size={21} />
@@ -294,27 +287,8 @@ export default function HomeScreen() {
             </View>
             <Ionicons color="#ffffff" name="chevron-up" size={20} />
           </Pressable>
-        ) : null}
-
-        <View style={styles.bottomNavigation}>
-          {bottomNavigation.map((item, index) => {
-            const isActive = index === 0;
-
-            return (
-              <Pressable key={item.label} style={styles.navItem}>
-                <Ionicons
-                  color={isActive ? "#d9475c" : "#8c8c8c"}
-                  name={item.icon}
-                  size={22}
-                />
-                <Text style={[styles.navLabel, isActive && styles.navLabelActive]}>
-                  {item.label}
-                </Text>
-              </Pressable>
-            );
-          })}
         </View>
-      </View>
+      ) : null}
     </SafeAreaView>
   );
 }
@@ -336,7 +310,7 @@ const styles = StyleSheet.create({
   },
   content: {
     paddingHorizontal: 18,
-    paddingBottom: 150,
+    paddingBottom: 90,
   },
   topBar: {
     flexDirection: "row",
@@ -662,7 +636,6 @@ const styles = StyleSheet.create({
     height: 58,
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 8,
     borderRadius: 8,
     paddingHorizontal: 15,
     backgroundColor: "#2d5a4b",
@@ -706,31 +679,5 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 14,
     fontWeight: "800",
-  },
-  bottomNavigation: {
-    height: 68,
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-around",
-    borderWidth: 1,
-    borderColor: "#dedfdb",
-    borderRadius: 8,
-    backgroundColor: "#ffffff",
-    boxShadow: "0 3px 12px rgba(37, 37, 37, 0.08)",
-  },
-  navItem: {
-    width: "24%",
-    height: 56,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  navLabel: {
-    marginTop: 4,
-    color: "#8c8c8c",
-    fontSize: 10,
-    fontWeight: "700",
-  },
-  navLabelActive: {
-    color: "#d9475c",
   },
 });

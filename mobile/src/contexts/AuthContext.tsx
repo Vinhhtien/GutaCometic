@@ -30,6 +30,7 @@ type AuthContextValue = {
     challengeId: string,
     otp: string
   ) => Promise<void>;
+  updateUserContext: (nextUser: User) => Promise<void>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -100,6 +101,11 @@ export function AuthProvider({ children }: PropsWithChildren) {
     setToken(null);
   };
 
+  const updateUserContext = async (nextUser: User) => {
+    await AsyncStorage.setItem(USER_STORAGE_KEY, JSON.stringify(nextUser));
+    setUser(nextUser);
+  };
+
   return (
     <AuthContext.Provider
       value={{
@@ -109,6 +115,7 @@ export function AuthProvider({ children }: PropsWithChildren) {
         logout,
         requestRegistrationOtp,
         token,
+        updateUserContext,
         user,
         verifyRegistrationOtp,
       }}

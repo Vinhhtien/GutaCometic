@@ -1,13 +1,13 @@
 const bcrypt = require("bcryptjs");
-const User = require("../models/User");
-const OtpChallenge = require("../models/OtpChallenge");
-const generateToken = require("../utils/generateToken");
-const AppError = require("../utils/AppError");
+const User = require("../../models/User");
+const OtpChallenge = require("../../models/OtpChallenge");
+const generateToken = require("../../utils/generateToken");
+const AppError = require("../../utils/AppError");
 const otpService = require("./otpService");
 const googleAuthService = require("./googleAuthService");
-const { runInTransaction } = require("./transactionService");
-const { OTP_CHANNELS, OTP_PURPOSES } = require("../constants/auth");
-const { USER_ROLES } = require("../constants/business");
+const { runInTransaction } = require("../stock/transactionService");
+const { OTP_CHANNELS, OTP_PURPOSES } = require("../../constants/auth");
+const { USER_ROLES } = require("../../constants/business");
 const {
   inferIdentifier,
   normalizeEmail,
@@ -17,7 +17,7 @@ const {
   validateFullName,
   validateOtp,
   validatePassword,
-} = require("../utils/authValidation");
+} = require("../../utils/authValidation");
 
 const publicUserFields = "-password";
 

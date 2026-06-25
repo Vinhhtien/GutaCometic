@@ -1,13 +1,13 @@
 const crypto = require("crypto");
-const OtpChallenge = require("../models/OtpChallenge");
-const AppError = require("../utils/AppError");
+const OtpChallenge = require("../../models/OtpChallenge");
+const AppError = require("../../utils/AppError");
 const { deliverOtp } = require("./otpDeliveryService");
 const {
   OTP_MAX_ATTEMPTS,
   OTP_MAX_REQUESTS_PER_HOUR,
   OTP_RESEND_COOLDOWN_SECONDS,
   OTP_TTL_SECONDS,
-} = require("../constants/auth");
+} = require("../../constants/auth");
 
 const getOtpSecret = () =>
   process.env.OTP_SECRET || process.env.JWT_SECRET || "development-otp-secret";
