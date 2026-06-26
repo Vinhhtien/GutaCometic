@@ -4,9 +4,7 @@ const cors = require("cors");
 const express = require("express");
 const connectDatabase = require("./config/db");
 const { errorHandler, notFound } = require("./middlewares/errorMiddleware");
-const authRoutes = require("./routes/authRoutes");
-const orderRoutes = require("./routes/orderRoutes");
-const productRoutes = require("./routes/productRoutes");
+const apiRouter = require("./routes");
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -18,9 +16,7 @@ app.get("/api/health", (_req, res) => {
   res.json({ status: "ok" });
 });
 
-app.use("/api/auth", authRoutes);
-app.use("/api/orders", orderRoutes);
-app.use("/api/products", productRoutes);
+app.use("/api", apiRouter);
 
 app.use(notFound);
 app.use(errorHandler);

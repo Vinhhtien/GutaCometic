@@ -99,7 +99,7 @@ export default function ForgotPasswordScreen() {
         confirmPassword
       );
       Alert.alert("Password updated", "Sign in with your new password.", [
-        { text: "Continue", onPress: () => router.replace("/login") },
+        { text: "Continue", onPress: () => router.replace("/auth/login") },
       ]);
     } catch (requestError) {
       Alert.alert("Unable to reset password", getErrorMessage(requestError));
@@ -227,7 +227,7 @@ export default function ForgotPasswordScreen() {
             ) : null}
 
             <View style={styles.footer}>
-              <Link href="/login" style={styles.link}>
+              <Link href="/auth/login" style={styles.link}>
                 Return to sign in
               </Link>
             </View>
