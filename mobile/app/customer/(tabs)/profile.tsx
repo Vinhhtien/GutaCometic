@@ -21,12 +21,17 @@ const menuItems = [
   { key: "personalInfo", label: "Thông tin cá nhân", icon: "person-outline" },
   { key: "orders", label: "Lịch sử đơn hàng", icon: "receipt-outline" },
   {
-    key: "payment",
-    label: "Phương thức thanh toán",
-    icon: "card-outline",
-    caption: "Visa · 4242",
+    key: "rewards",
+    label: "Ưu đãi thành viên",
+    icon: "gift-outline",
+    caption: "Đổi điểm tích lũy lấy voucher giảm giá",
   },
-  { key: "beautyLog", label: "Nhật ký làm đẹp", icon: "book-outline" },
+  {
+    key: "policy",
+    label: "Chính sách & Điều khoản",
+    icon: "document-text-outline",
+    caption: "Chính sách bảo mật và đổi trả sản phẩm",
+  },
   { key: "support", label: "Trung tâm hỗ trợ", icon: "help-buoy-outline" },
 ] as const;
 
@@ -48,6 +53,16 @@ export default function ProfileScreen() {
 
     if (key === "orders") {
       router.push("/customer/orders");
+      return;
+    }
+
+    if (key === "rewards") {
+      // router.push("/customer/rewards");
+      return;
+    }
+
+    if (key === "policy") {
+      // router.push("/customer/policy");
     }
   };
 
