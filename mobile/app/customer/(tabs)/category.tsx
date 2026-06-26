@@ -2,16 +2,16 @@ import { Ionicons } from "@expo/vector-icons";
 import { StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-export default function OrdersScreen() {
+export default function CategoryScreen() {
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
       <View style={styles.emptyState}>
         <View style={styles.emptyIcon}>
-          <Ionicons color="#d9475c" name="receipt-outline" size={26} />
+          <Ionicons color="#2d5a4b" name="grid-outline" size={26} />
         </View>
-        <Text style={styles.emptyTitle}>No orders yet</Text>
+        <Text style={styles.emptyTitle}>Danh mục sắp ra mắt</Text>
         <Text style={styles.emptyMessage}>
-          Your order history will show up here.
+          Chúng tôi vẫn đang xây dựng phần này.
         </Text>
       </View>
     </SafeAreaView>
@@ -35,7 +35,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 8,
-    backgroundColor: "#fff0f2",
+    backgroundColor: "#eaf2ee",
   },
   emptyTitle: {
     marginTop: 14,

@@ -2,16 +2,20 @@ import { Ionicons } from "@expo/vector-icons";
 import { StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-export default function ExploreScreen() {
+export default function OrdersScreen() {
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
+      <View style={styles.header}>
+        <Text style={styles.headerTitle}>Đơn hàng</Text>
+      </View>
+
       <View style={styles.emptyState}>
         <View style={styles.emptyIcon}>
-          <Ionicons color="#d9475c" name="grid-outline" size={26} />
+          <Ionicons color="#2d5a4b" name="receipt-outline" size={26} />
         </View>
-        <Text style={styles.emptyTitle}>Explore is coming soon</Text>
+        <Text style={styles.emptyTitle}>Chưa có đơn hàng nào</Text>
         <Text style={styles.emptyMessage}>
-          We are still building this section.
+          Lịch sử đơn hàng của bạn sẽ hiển thị ở đây.
         </Text>
       </View>
     </SafeAreaView>
@@ -22,6 +26,16 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: "#ffffff",
+  },
+  header: {
+    paddingHorizontal: 18,
+    paddingTop: 8,
+    paddingBottom: 14,
+  },
+  headerTitle: {
+    color: "#252525",
+    fontSize: 17,
+    fontWeight: "800",
   },
   emptyState: {
     flex: 1,
@@ -35,7 +49,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderRadius: 8,
-    backgroundColor: "#fff0f2",
+    backgroundColor: "#eaf2ee",
   },
   emptyTitle: {
     marginTop: 14,
