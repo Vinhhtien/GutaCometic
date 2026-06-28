@@ -1,4 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
+import { router } from "expo-router";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 import { Product } from "@/types/product";
 
@@ -11,7 +12,15 @@ const formatPrice = (price: number) =>
 
 export function ProductCard({ product }: ProductCardProps) {
   return (
-    <View style={styles.card}>
+    <Pressable
+      onPress={() =>
+        router.push({
+          pathname: "/customer/product-detail",
+          params: { id: product._id },
+        })
+      }
+      style={styles.card}
+    >
       <View style={styles.media}>
         {product.image ? (
           <Image source={{ uri: product.image }} style={styles.image} />
@@ -44,7 +53,7 @@ export function ProductCard({ product }: ProductCardProps) {
           </Pressable>
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 

@@ -1,3 +1,9 @@
+export type ProductIngredient = {
+  icon: string;
+  title: string;
+  subtitle: string;
+};
+
 export type Product = {
   _id: string;
   sku: string;
@@ -5,9 +11,14 @@ export type Product = {
   brand: string;
   description: string;
   image: string;
+  images?: string[];
   price: number;
+  originalPrice?: number | null;
   category: string;
   skinTypes: string[];
+  ingredients?: ProductIngredient[];
+  rating?: number;
+  reviewCount?: number;
   isActive: boolean;
   createdAt: string;
   updatedAt: string;
