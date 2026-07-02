@@ -1,11 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Image,
   KeyboardAvoidingView,
-  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -22,12 +22,22 @@ import { createOnlineOrder } from "@/services/orderService";
 import { getStores } from "@/services/storeService";
 import { Store } from "@/types/store";
 
+const DELIVERY_FEE = 25000;
+
 const formatPrice = (price: number) =>
   `${new Intl.NumberFormat("vi-VN").format(price)}đ`;
 
+type FulfillmentType = "DELIVERY" | "STORE_PICKUP";
+type CheckoutStep = 1 | 2;
+
 export default function CheckoutScreen() {
   const { token, user } = useAuth();
-  const { clearCart, items, subtotal } = useCart();
+  const { clearCart, items, removeItem, setQuantity, subtotal } = useCart();
+
+  const [currentStep, setCurrentStep] = useState<CheckoutStep>(1);
+
+  const [fulfillmentType, setFulfillmentType] =
+    useState<FulfillmentType>("DELIVERY");
 
   const [stores, setStores] = useState<Store[]>([]);
   const [isLoadingStores, setIsLoadingStores] = useState(true);
@@ -38,7 +48,15 @@ export default function CheckoutScreen() {
   const [phone, setPhone] = useState(user?.phone ?? "");
   const [addressLine, setAddressLine] = useState(user?.address ?? "");
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [isSuccessVisible, setIsSuccessVisible] = useState(false);
+
+  const isDelivery = fulfillmentType === "DELIVERY";
+  const shippingFee = isDelivery ? DELIVERY_FEE : 0;
+  const totalPrice = subtotal + shippingFee;
+
+  const selectedStore = useMemo(
+    () => stores.find((store) => store._id === selectedStoreId) ?? null,
+    [stores, selectedStoreId]
+  );
 
   const loadStores = useCallback(async () => {
     if (!token) {
@@ -61,39 +79,89 @@ export default function CheckoutScreen() {
     loadStores();
   }, [loadStores]);
 
-  const handleSubmit = async () => {
-    if (!token || isSubmitting) {
+  const handleDecreaseQuantity = (item: (typeof items)[number]) => {
+    if (item.quantity <= 1) {
+      Alert.alert(
+        "Xác nhận xóa",
+        "Bạn có chắc chắn muốn xóa sản phẩm này ra khỏi giỏ hàng không?",
+        [
+          { text: "Hủy bỏ", style: "cancel" },
+          {
+            text: "Xác nhận xóa",
+            style: "destructive",
+            onPress: () => removeItem(item.productId),
+          },
+        ]
+      );
       return;
     }
 
-    if (!recipientName.trim() || !phone.trim() || !addressLine.trim()) {
+    setQuantity(item.productId, item.quantity - 1);
+  };
+
+  const handleIncreaseQuantity = (item: (typeof items)[number]) => {
+    setQuantity(item.productId, item.quantity + 1);
+  };
+
+  const handleContinueToPayment = () => {
+    if (
+      isDelivery &&
+      (!recipientName.trim() || !phone.trim() || !addressLine.trim())
+    ) {
       Alert.alert("Thiếu thông tin", "Vui lòng nhập đầy đủ thông tin nhận hàng.");
       return;
     }
 
     if (!selectedStoreId) {
-      Alert.alert("Chưa chọn cửa hàng", "Vui lòng chọn cửa hàng giao hàng.");
+      Alert.alert(
+        "Chưa chọn cửa hàng",
+        isDelivery
+          ? "Vui lòng chọn cửa hàng giao hàng."
+          : "Vui lòng chọn cửa hàng để nhận hàng."
+      );
+      return;
+    }
+
+    setCurrentStep(2);
+  };
+
+  const handlePlaceOrder = async () => {
+    if (!token || isSubmitting) {
       return;
     }
 
     try {
       setIsSubmitting(true);
-      await createOnlineOrder(token, {
+      const order = await createOnlineOrder(token, {
         storeId: selectedStoreId,
-        fulfillmentType: "DELIVERY",
+        fulfillmentType,
         items: items.map((item) => ({
           productId: item.productId,
           quantity: item.quantity,
         })),
-        shippingAddress: {
-          recipientName: recipientName.trim(),
-          phone: phone.trim(),
-          addressLine: addressLine.trim(),
-        },
-        paymentMethod: "COD",
+        shippingAddress: isDelivery
+          ? {
+              recipientName: recipientName.trim(),
+              phone: phone.trim(),
+              addressLine: addressLine.trim(),
+            }
+          : null,
+        shippingFee,
+        paymentMethod: "ONLINE_PAYMENT",
       });
-      await clearCart();
-      setIsSuccessVisible(true);
+
+      Alert.alert("Bạn đã thanh toán thành công!", undefined, [
+        {
+          text: "OK",
+          onPress: async () => {
+            await clearCart();
+            router.replace({
+              pathname: "/customer/order-detail",
+              params: { id: order._id },
+            });
+          },
+        },
+      ]);
     } catch (requestError) {
       Alert.alert("Đặt hàng thất bại", getErrorMessage(requestError));
     } finally {
@@ -131,13 +199,78 @@ export default function CheckoutScreen() {
       <View style={styles.header}>
         <Pressable
           accessibilityLabel="Quay lại"
-          onPress={() => router.back()}
+          onPress={() =>
+            currentStep === 2 ? setCurrentStep(1) : router.back()
+          }
           style={styles.backButton}
         >
           <Ionicons color="#252525" name="arrow-back" size={22} />
         </Pressable>
         <Text style={styles.headerTitle}>Thanh toán</Text>
         <View style={styles.backButton} />
+      </View>
+
+      <View style={styles.progressWrap}>
+        <View style={styles.progressRow}>
+          <View style={styles.progressStep}>
+            <View
+              style={[
+                styles.progressDot,
+                currentStep >= 1 && styles.progressDotActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.progressDotText,
+                  currentStep >= 1 && styles.progressDotTextActive,
+                ]}
+              >
+                1
+              </Text>
+            </View>
+            <Text
+              style={[
+                styles.progressLabel,
+                currentStep === 1 && styles.progressLabelActive,
+              ]}
+            >
+              Nhận hàng
+            </Text>
+          </View>
+
+          <View
+            style={[
+              styles.progressLine,
+              currentStep === 2 && styles.progressLineActive,
+            ]}
+          />
+
+          <View style={styles.progressStep}>
+            <View
+              style={[
+                styles.progressDot,
+                currentStep >= 2 && styles.progressDotActive,
+              ]}
+            >
+              <Text
+                style={[
+                  styles.progressDotText,
+                  currentStep >= 2 && styles.progressDotTextActive,
+                ]}
+              >
+                2
+              </Text>
+            </View>
+            <Text
+              style={[
+                styles.progressLabel,
+                currentStep === 2 && styles.progressLabelActive,
+              ]}
+            >
+              Thanh toán
+            </Text>
+          </View>
+        </View>
       </View>
 
       <KeyboardAvoidingView
@@ -149,143 +282,262 @@ export default function CheckoutScreen() {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.sectionLabel}>ĐỊA CHỈ NHẬN HÀNG</Text>
-          <View style={styles.card}>
-            <View style={styles.field}>
-              <Text style={styles.fieldLabel}>HỌ VÀ TÊN</Text>
-              <TextInput
-                onChangeText={setRecipientName}
-                style={styles.fieldValueInput}
-                value={recipientName}
-              />
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.field}>
-              <Text style={styles.fieldLabel}>SỐ ĐIỆN THOẠI</Text>
-              <TextInput
-                keyboardType="phone-pad"
-                onChangeText={setPhone}
-                style={styles.fieldValueInput}
-                value={phone}
-              />
-            </View>
-            <View style={styles.divider} />
-            <View style={styles.field}>
-              <Text style={styles.fieldLabel}>ĐỊA CHỈ GIAO HÀNG</Text>
-              <TextInput
-                multiline
-                onChangeText={setAddressLine}
-                style={styles.fieldValueInput}
-                value={addressLine}
-              />
-            </View>
-          </View>
-
-          <Text style={styles.sectionLabel}>CỬA HÀNG GIAO HÀNG</Text>
-          <View style={styles.card}>
-            {isLoadingStores ? (
-              <ActivityIndicator color="#252525" style={styles.storeLoader} />
-            ) : storesError ? (
-              <Text style={styles.storeErrorText}>{storesError}</Text>
-            ) : stores.length === 0 ? (
-              <Text style={styles.storeErrorText}>
-                Hiện chưa có cửa hàng nào khả dụng.
-              </Text>
-            ) : (
-              stores.map((store) => {
-                const isSelected = store._id === selectedStoreId;
-
-                return (
-                  <Pressable
-                    key={store._id}
-                    onPress={() => setSelectedStoreId(store._id)}
-                    style={styles.storeRow}
+          {currentStep === 1 ? (
+            <>
+              <View style={styles.methodSwitcher}>
+                <Pressable
+                  onPress={() => setFulfillmentType("DELIVERY")}
+                  style={[styles.methodTab, isDelivery && styles.methodTabActive]}
+                >
+                  <Ionicons
+                    color={isDelivery ? "#ffffff" : "#6f716e"}
+                    name="car-outline"
+                    size={18}
+                  />
+                  <Text
+                    style={[
+                      styles.methodTabText,
+                      isDelivery && styles.methodTabTextActive,
+                    ]}
                   >
-                    <View
-                      style={[
-                        styles.radioOuter,
-                        isSelected && styles.radioOuterActive,
-                      ]}
-                    >
-                      {isSelected ? <View style={styles.radioInner} /> : null}
-                    </View>
-                    <View style={styles.storeTextWrap}>
-                      <Text style={styles.storeName}>{store.name}</Text>
-                      <Text style={styles.storeAddress}>{store.address}</Text>
-                    </View>
-                  </Pressable>
-                );
-              })
-            )}
-          </View>
-
-          <Text style={styles.sectionLabel}>PHƯƠNG THỨC THANH TOÁN</Text>
-          <View style={styles.card}>
-            <View style={styles.paymentRow}>
-              <Ionicons color="#2d5a4b" name="cash-outline" size={20} />
-              <Text style={styles.paymentText}>
-                Thanh toán khi nhận hàng (COD)
-              </Text>
-            </View>
-          </View>
-
-          <Text style={styles.sectionLabel}>ĐƠN HÀNG</Text>
-          <View style={styles.card}>
-            {items.map((item) => (
-              <View key={item.productId} style={styles.orderItemRow}>
-                <Text numberOfLines={1} style={styles.orderItemName}>
-                  {item.name} × {item.quantity}
-                </Text>
-                <Text style={styles.orderItemPrice}>
-                  {formatPrice(item.unitPrice * item.quantity)}
-                </Text>
+                    Giao hàng tận nơi
+                  </Text>
+                </Pressable>
+                <Pressable
+                  onPress={() => setFulfillmentType("STORE_PICKUP")}
+                  style={[styles.methodTab, !isDelivery && styles.methodTabActive]}
+                >
+                  <Ionicons
+                    color={!isDelivery ? "#ffffff" : "#6f716e"}
+                    name="storefront-outline"
+                    size={18}
+                  />
+                  <Text
+                    style={[
+                      styles.methodTabText,
+                      !isDelivery && styles.methodTabTextActive,
+                    ]}
+                  >
+                    Nhận tại cửa hàng
+                  </Text>
+                </Pressable>
               </View>
-            ))}
-            <View style={styles.divider} />
-            <View style={styles.orderItemRow}>
-              <Text style={styles.subtotalLabel}>Tổng cộng</Text>
-              <Text style={styles.subtotalValue}>{formatPrice(subtotal)}</Text>
-            </View>
-          </View>
+
+              {isDelivery ? (
+                <>
+                  <Text style={styles.sectionLabel}>ĐỊA CHỈ NHẬN HÀNG</Text>
+                  <View style={styles.card}>
+                    <View style={styles.field}>
+                      <Text style={styles.fieldLabel}>HỌ VÀ TÊN</Text>
+                      <TextInput
+                        onChangeText={setRecipientName}
+                        style={styles.fieldValueInput}
+                        value={recipientName}
+                      />
+                    </View>
+                    <View style={styles.divider} />
+                    <View style={styles.field}>
+                      <Text style={styles.fieldLabel}>SỐ ĐIỆN THOẠI</Text>
+                      <TextInput
+                        keyboardType="phone-pad"
+                        onChangeText={setPhone}
+                        style={styles.fieldValueInput}
+                        value={phone}
+                      />
+                    </View>
+                    <View style={styles.divider} />
+                    <View style={styles.field}>
+                      <Text style={styles.fieldLabel}>ĐỊA CHỈ GIAO HÀNG</Text>
+                      <TextInput
+                        multiline
+                        onChangeText={setAddressLine}
+                        style={styles.fieldValueInput}
+                        value={addressLine}
+                      />
+                    </View>
+                  </View>
+                </>
+              ) : null}
+
+              <Text style={styles.sectionLabel}>
+                {isDelivery ? "CỬA HÀNG GIAO HÀNG" : "HỆ THỐNG CỬA HÀNG GUTA"}
+              </Text>
+              <View style={styles.card}>
+                {isLoadingStores ? (
+                  <ActivityIndicator color="#252525" style={styles.storeLoader} />
+                ) : storesError ? (
+                  <Text style={styles.storeErrorText}>{storesError}</Text>
+                ) : stores.length === 0 ? (
+                  <Text style={styles.storeErrorText}>
+                    Hiện chưa có cửa hàng nào khả dụng.
+                  </Text>
+                ) : (
+                  stores.map((store) => {
+                    const isSelected = store._id === selectedStoreId;
+
+                    return (
+                      <Pressable
+                        key={store._id}
+                        onPress={() => setSelectedStoreId(store._id)}
+                        style={styles.storeRow}
+                      >
+                        <View
+                          style={[
+                            styles.radioOuter,
+                            isSelected && styles.radioOuterActive,
+                          ]}
+                        >
+                          {isSelected ? <View style={styles.radioInner} /> : null}
+                        </View>
+                        <View style={styles.storeTextWrap}>
+                          <Text style={styles.storeName}>{store.name}</Text>
+                          <Text style={styles.storeAddress}>{store.address}</Text>
+                        </View>
+                      </Pressable>
+                    );
+                  })
+                )}
+              </View>
+            </>
+          ) : (
+            <>
+              <Text style={styles.sectionLabel}>THÔNG TIN NHẬN HÀNG</Text>
+              <View style={styles.card}>
+                <View style={styles.summaryRow}>
+                  <Ionicons
+                    color="#2d5a4b"
+                    name={isDelivery ? "car-outline" : "storefront-outline"}
+                    size={18}
+                  />
+                  <View style={styles.summaryTextWrap}>
+                    <Text style={styles.summaryTitle}>
+                      {isDelivery ? "Giao hàng tận nơi" : "Nhận tại cửa hàng"}
+                    </Text>
+                    {isDelivery ? (
+                      <>
+                        <Text style={styles.summaryLine}>
+                          {recipientName.trim()} · {phone.trim()}
+                        </Text>
+                        <Text style={styles.summaryLineMuted}>
+                          {addressLine.trim()}
+                        </Text>
+                      </>
+                    ) : (
+                      <>
+                        <Text style={styles.summaryLine}>
+                          {selectedStore?.name}
+                        </Text>
+                        <Text style={styles.summaryLineMuted}>
+                          {selectedStore?.address}
+                        </Text>
+                      </>
+                    )}
+                  </View>
+                  <Pressable
+                    onPress={() => setCurrentStep(1)}
+                    style={styles.editButton}
+                  >
+                    <Text style={styles.editButtonText}>Sửa</Text>
+                  </Pressable>
+                </View>
+              </View>
+
+              <Text style={styles.sectionLabel}>SẢN PHẨM ({items.length})</Text>
+              <View style={styles.card}>
+                {items.map((item, index) => (
+                  <View key={item.productId}>
+                    <View style={styles.productRow}>
+                      <Image
+                        source={{ uri: item.image }}
+                        style={styles.productThumbnail}
+                      />
+                      <View style={styles.productInfo}>
+                        <Text style={styles.productBrand}>{item.brand}</Text>
+                        <Text numberOfLines={2} style={styles.productName}>
+                          {item.name}
+                        </Text>
+                        <Text style={styles.productPrice}>
+                          {formatPrice(item.unitPrice)}
+                        </Text>
+                        <View style={styles.quantityStepper}>
+                          <Pressable
+                            accessibilityLabel="Giảm số lượng"
+                            hitSlop={8}
+                            onPress={() => handleDecreaseQuantity(item)}
+                            style={styles.quantityStepButton}
+                          >
+                            <Ionicons color="#252525" name="remove" size={14} />
+                          </Pressable>
+                          <Text style={styles.quantityValue}>
+                            {item.quantity}
+                          </Text>
+                          <Pressable
+                            accessibilityLabel="Tăng số lượng"
+                            hitSlop={8}
+                            onPress={() => handleIncreaseQuantity(item)}
+                            style={styles.quantityStepButton}
+                          >
+                            <Ionicons color="#252525" name="add" size={14} />
+                          </Pressable>
+                        </View>
+                      </View>
+                    </View>
+                    {index < items.length - 1 ? (
+                      <View style={styles.divider} />
+                    ) : null}
+                  </View>
+                ))}
+              </View>
+
+              <Text style={styles.sectionLabel}>CHI TIẾT THANH TOÁN</Text>
+              <View style={styles.card}>
+                <View style={styles.orderItemRow}>
+                  <Text style={styles.summaryLabel}>Tổng tiền hàng</Text>
+                  <Text style={styles.summaryValue}>{formatPrice(subtotal)}</Text>
+                </View>
+                <View style={styles.orderItemRow}>
+                  <Text style={styles.summaryLabel}>Phí vận chuyển</Text>
+                  <Text style={styles.summaryValue}>
+                    {shippingFee === 0 ? "Miễn phí" : formatPrice(shippingFee)}
+                  </Text>
+                </View>
+                <View style={styles.divider} />
+                <View style={styles.orderItemRow}>
+                  <Text style={styles.subtotalLabel}>Tổng thanh toán</Text>
+                  <Text style={styles.subtotalValue}>
+                    {formatPrice(totalPrice)}
+                  </Text>
+                </View>
+              </View>
+            </>
+          )}
         </ScrollView>
       </KeyboardAvoidingView>
 
       <View style={styles.footer}>
-        <Pressable
-          disabled={isSubmitting}
-          onPress={handleSubmit}
-          style={[styles.submitButton, isSubmitting && styles.submitButtonDisabled]}
-        >
-          {isSubmitting ? (
-            <ActivityIndicator color="#ffffff" />
-          ) : (
-            <Text style={styles.submitButtonText}>
-              Đặt hàng · {formatPrice(subtotal)}
-            </Text>
-          )}
-        </Pressable>
+        {currentStep === 1 ? (
+          <Pressable onPress={handleContinueToPayment} style={styles.submitButton}>
+            <Text style={styles.submitButtonText}>Tiếp tục đến thanh toán</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            disabled={isSubmitting}
+            onPress={handlePlaceOrder}
+            style={[
+              styles.submitButton,
+              isSubmitting && styles.submitButtonDisabled,
+            ]}
+          >
+            {isSubmitting ? (
+              <ActivityIndicator color="#ffffff" />
+            ) : (
+              <Text style={styles.submitButtonText}>
+                Tiến hành Đặt hàng · {formatPrice(totalPrice)}
+              </Text>
+            )}
+          </Pressable>
+        )}
       </View>
-
-      <Modal animationType="fade" transparent visible={isSuccessVisible}>
-        <View style={styles.successOverlay}>
-          <View style={styles.successCard}>
-            <Ionicons color="#2d5a4b" name="checkmark-circle" size={42} />
-            <Text style={styles.successTitle}>Đặt hàng thành công</Text>
-            <Text style={styles.successMessage}>
-              Đơn hàng của bạn đã được ghi nhận và sẽ được xử lý sớm nhất.
-            </Text>
-            <Pressable
-              onPress={() => {
-                setIsSuccessVisible(false);
-                router.replace("/customer/(tabs)/orders");
-              }}
-              style={styles.successButton}
-            >
-              <Text style={styles.successButtonText}>Xem đơn hàng</Text>
-            </Pressable>
-          </View>
-        </View>
-      </Modal>
     </SafeAreaView>
   );
 }
@@ -335,12 +587,89 @@ const styles = StyleSheet.create({
     lineHeight: 19,
     textAlign: "center",
   },
+  progressWrap: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 4,
+    backgroundColor: "#ffffff",
+  },
+  progressRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  progressStep: {
+    alignItems: "center",
+    width: 76,
+  },
+  progressDot: {
+    width: 26,
+    height: 26,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 13,
+    backgroundColor: "#f0f1ee",
+  },
+  progressDotActive: {
+    backgroundColor: "#252525",
+  },
+  progressDotText: {
+    color: "#9a9c98",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  progressDotTextActive: {
+    color: "#ffffff",
+  },
+  progressLabel: {
+    marginTop: 6,
+    color: "#9a9c98",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  progressLabelActive: {
+    color: "#252525",
+  },
+  progressLine: {
+    flex: 1,
+    height: 2,
+    marginTop: 13,
+    backgroundColor: "#f0f1ee",
+  },
+  progressLineActive: {
+    backgroundColor: "#252525",
+  },
   keyboardView: {
     flex: 1,
   },
   content: {
     paddingHorizontal: 18,
     paddingBottom: 36,
+  },
+  methodSwitcher: {
+    flexDirection: "row",
+    gap: 10,
+    marginTop: 14,
+  },
+  methodTab: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    height: 46,
+    borderRadius: 12,
+    backgroundColor: "#f0f1ee",
+  },
+  methodTabActive: {
+    backgroundColor: "#252525",
+  },
+  methodTabText: {
+    color: "#6f716e",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  methodTabTextActive: {
+    color: "#ffffff",
   },
   sectionLabel: {
     marginTop: 18,
@@ -421,16 +750,98 @@ const styles = StyleSheet.create({
     color: "#8c8e8a",
     fontSize: 12,
   },
-  paymentRow: {
+  summaryRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "flex-start",
     gap: 10,
-    paddingVertical: 16,
+    paddingVertical: 14,
   },
-  paymentText: {
+  summaryTextWrap: {
+    flex: 1,
+  },
+  summaryTitle: {
     color: "#212121",
     fontSize: 14,
+    fontWeight: "800",
+  },
+  summaryLine: {
+    marginTop: 4,
+    color: "#3d3e3c",
+    fontSize: 13,
     fontWeight: "700",
+  },
+  summaryLineMuted: {
+    marginTop: 2,
+    color: "#8c8e8a",
+    fontSize: 12,
+  },
+  editButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+    backgroundColor: "#f0f1ee",
+  },
+  editButtonText: {
+    color: "#252525",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  productRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    paddingVertical: 14,
+  },
+  productThumbnail: {
+    width: 64,
+    height: 64,
+    borderRadius: 12,
+    backgroundColor: "#f0f1ee",
+  },
+  productInfo: {
+    flex: 1,
+  },
+  productBrand: {
+    color: "#9a9c98",
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  productName: {
+    marginTop: 2,
+    color: "#212121",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  productPrice: {
+    marginTop: 4,
+    color: "#2d5a4b",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  quantityStepper: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    marginTop: 8,
+    borderWidth: 1,
+    borderColor: "#dedfdb",
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  quantityStepButton: {
+    width: 28,
+    height: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f7f7f6",
+  },
+  quantityValue: {
+    minWidth: 32,
+    color: "#212121",
+    fontSize: 13,
+    fontWeight: "800",
+    textAlign: "center",
   },
   orderItemRow: {
     flexDirection: "row",
@@ -439,16 +850,15 @@ const styles = StyleSheet.create({
     gap: 10,
     paddingVertical: 12,
   },
-  orderItemName: {
-    flex: 1,
-    color: "#3d3e3c",
+  summaryLabel: {
+    color: "#8c8e8a",
     fontSize: 13,
     fontWeight: "600",
   },
-  orderItemPrice: {
-    color: "#212121",
+  summaryValue: {
+    color: "#3d3e3c",
     fontSize: 13,
-    fontWeight: "800",
+    fontWeight: "700",
   },
   subtotalLabel: {
     color: "#6f716e",
@@ -479,49 +889,6 @@ const styles = StyleSheet.create({
     opacity: 0.7,
   },
   submitButtonText: {
-    color: "#ffffff",
-    fontSize: 15,
-    fontWeight: "800",
-  },
-  successOverlay: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 32,
-    backgroundColor: "rgba(0,0,0,0.4)",
-  },
-  successCard: {
-    width: "100%",
-    alignItems: "center",
-    borderRadius: 18,
-    paddingHorizontal: 24,
-    paddingTop: 28,
-    paddingBottom: 22,
-    backgroundColor: "#ffffff",
-  },
-  successTitle: {
-    marginTop: 12,
-    color: "#252525",
-    fontSize: 17,
-    fontWeight: "800",
-  },
-  successMessage: {
-    marginTop: 8,
-    marginBottom: 20,
-    color: "#5c5e5b",
-    fontSize: 14,
-    lineHeight: 20,
-    textAlign: "center",
-  },
-  successButton: {
-    width: "100%",
-    height: 48,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 10,
-    backgroundColor: "#2d5a4b",
-  },
-  successButtonText: {
     color: "#ffffff",
     fontSize: 15,
     fontWeight: "800",

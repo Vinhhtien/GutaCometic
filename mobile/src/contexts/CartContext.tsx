@@ -108,6 +108,7 @@ export function CartProvider({ children }: PropsWithChildren) {
           productId: product._id,
           sku: product.sku,
           name: product.name,
+          brand: product.brand,
           image: product.image,
           unitPrice: product.price,
           quantity,

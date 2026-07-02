@@ -78,11 +78,24 @@ const getOrders = async (req, res, next) => {
   }
 };
 
+const getOrderById = async (req, res, next) => {
+  try {
+    const order = await orderService.getOrderForUser(
+      req.params.orderId,
+      req.user
+    );
+    res.json({ order });
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
   approveOfflineOrder,
   cancelOrder,
   createOfflineOrder,
   createOnlineOrder,
+  getOrderById,
   getOrders,
   payOfflineOrder,
   updateOnlineStatus,

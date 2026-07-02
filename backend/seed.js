@@ -214,6 +214,7 @@ const seed = async () => {
             productId: savedProduct._id,
             totalStock: 100,
             reservedStock: 0,
+            availableStock: 100,
           },
         },
         { upsert: true, runValidators: true }

@@ -14,14 +14,22 @@ export type ShippingAddress = {
   addressLine: string;
 };
 
+export type OrderStoreSummary = {
+  _id: string;
+  name: string;
+  address?: string;
+  phone?: string;
+};
+
 export type Order = {
   _id: string;
   orderCode: string;
   channel: string;
   fulfillmentType: string;
-  storeId: string;
+  storeId: string | OrderStoreSummary;
   items: OrderItem[];
   subtotal: number;
+  shippingFee: number;
   totalPrice: number;
   status: string;
   paymentStatus: string;
@@ -34,6 +42,7 @@ export type CreateOnlineOrderPayload = {
   storeId: string;
   fulfillmentType: "DELIVERY" | "STORE_PICKUP";
   items: { productId: string; quantity: number }[];
-  shippingAddress?: ShippingAddress;
+  shippingAddress?: ShippingAddress | null;
+  shippingFee?: number;
   paymentMethod?: string;
 };

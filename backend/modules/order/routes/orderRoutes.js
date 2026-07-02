@@ -12,6 +12,7 @@ const router = express.Router();
 router.use(protect);
 
 router.get("/", orderController.getOrders);
+router.get("/:orderId", orderController.getOrderById);
 router.post(
   "/online",
   authorize(USER_ROLES.CUSTOMER),

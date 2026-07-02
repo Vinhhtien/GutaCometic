@@ -285,7 +285,10 @@ export default function HomeScreen() {
 
       {itemCount > 0 ? (
         <View style={styles.bottomDock}>
-          <Pressable style={styles.cartBar}>
+          <Pressable
+            onPress={() => router.push("/customer/cart")}
+            style={styles.cartBar}
+          >
             <View style={styles.cartIconWrap}>
               <Ionicons color="#ffffff" name="bag-handle" size={21} />
               <View style={styles.cartCount}>

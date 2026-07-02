@@ -49,9 +49,12 @@ const PAYMENT_METHODS = Object.freeze({
   PAY_AT_STORE: "PAY_AT_STORE",
 });
 
+const DELIVERY_FEE_VND = 25000;
+
 const values = (constant) => Object.values(constant);
 
 module.exports = {
+  DELIVERY_FEE_VND,
   FULFILLMENT_TYPES,
   ORDER_CHANNELS,
   ORDER_STATUSES,

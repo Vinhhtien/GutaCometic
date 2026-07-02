@@ -132,7 +132,15 @@ export default function ProfileScreen() {
 
         <View style={styles.quickActions}>
           {quickActions.map((action) => (
-            <Pressable key={action.label} style={styles.quickAction}>
+            <Pressable
+              key={action.label}
+              onPress={() => {
+                if (action.label === "Yêu thích") {
+                  router.push("/customer/wishlist");
+                }
+              }}
+              style={styles.quickAction}
+            >
               <View style={styles.quickActionIcon}>
                 <Ionicons color="#d9475c" name={action.icon} size={22} />
               </View>

@@ -15,6 +15,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/contexts/AuthContext";
+import { useWishlist } from "@/contexts/WishlistContext";
 import { getErrorMessage } from "@/services/api";
 import { getProducts } from "@/services/productService";
 import { Product } from "@/types/product";
@@ -215,7 +216,8 @@ export default function CategoryScreen() {
 }
 
 function ProductGridCard({ product }: { product: Product }) {
-  const [isFavorite, setIsFavorite] = useState(false);
+  const { isLiked, toggleLike } = useWishlist();
+  const isFavorite = isLiked(product._id);
 
   return (
     <Pressable
@@ -237,7 +239,7 @@ function ProductGridCard({ product }: { product: Product }) {
         )}
         <Pressable
           accessibilityLabel="Yêu thích"
-          onPress={() => setIsFavorite((prev) => !prev)}
+          onPress={() => toggleLike(product)}
           style={styles.favoriteButton}
         >
           <Ionicons

@@ -13,3 +13,19 @@ export const createOnlineOrder = async (
 
   return response.order;
 };
+
+export const getOrders = async (token: string) => {
+  const response = await apiRequest<{ orders: Order[] }>("/orders", {
+    token,
+  });
+
+  return response.orders;
+};
+
+export const getOrderById = async (token: string, orderId: string) => {
+  const response = await apiRequest<{ order: Order }>(`/orders/${orderId}`, {
+    token,
+  });
+
+  return response.order;
+};

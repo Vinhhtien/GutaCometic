@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { useWishlist } from "@/contexts/WishlistContext";
 import { Product } from "@/types/product";
 
 type ProductCardProps = {
@@ -11,6 +12,9 @@ const formatPrice = (price: number) =>
   `${new Intl.NumberFormat("vi-VN").format(price)} VND`;
 
 export function ProductCard({ product }: ProductCardProps) {
+  const { isLiked, toggleLike } = useWishlist();
+  const isFavorite = isLiked(product._id);
+
   return (
     <Pressable
       onPress={() =>
@@ -30,8 +34,16 @@ export function ProductCard({ product }: ProductCardProps) {
             <Text style={styles.placeholderText}>GUTA</Text>
           </View>
         )}
-        <Pressable accessibilityLabel="Save product" style={styles.favoriteButton}>
-          <Ionicons color="#40413f" name="heart-outline" size={18} />
+        <Pressable
+          accessibilityLabel="Yêu thích"
+          onPress={() => toggleLike(product)}
+          style={styles.favoriteButton}
+        >
+          <Ionicons
+            color={isFavorite ? "#d9475c" : "#40413f"}
+            name={isFavorite ? "heart" : "heart-outline"}
+            size={18}
+          />
         </Pressable>
       </View>
 

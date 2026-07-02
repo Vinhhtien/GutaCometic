@@ -143,6 +143,11 @@ const orderSchema = new mongoose.Schema(
       default: 0,
       min: 0,
     },
+    shippingFee: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
     pointsUsed: {
       type: Number,
       default: 0,
@@ -237,7 +242,10 @@ orderSchema.pre("validate", function validateOrder(next) {
     item.lineTotal = item.unitPrice * item.quantity;
   });
   this.subtotal = calculatedSubtotal;
-  this.totalPrice = Math.max(0, calculatedSubtotal - this.discountAmount);
+  this.totalPrice = Math.max(
+    0,
+    calculatedSubtotal + this.shippingFee - this.discountAmount
+  );
 
   if (this.channel === ORDER_CHANNELS.ONLINE && !this.customerId) {
     this.invalidate("customerId", "Online orders require a customer account");

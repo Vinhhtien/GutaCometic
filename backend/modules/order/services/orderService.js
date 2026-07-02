@@ -6,6 +6,7 @@ const AppError = require("../../../utils/AppError");
 const inventoryService = require("../../stock/services/inventoryService");
 const { runInTransaction } = require("../../stock/services/transactionService");
 const {
+  DELIVERY_FEE_VND,
   FULFILLMENT_TYPES,
   ORDER_CHANNELS,
   ORDER_STATUSES,
@@ -115,6 +116,26 @@ const createOnlineOrder = async (payload, customer) => {
     );
   }
 
+  const isDelivery = payload.fulfillmentType === FULFILLMENT_TYPES.DELIVERY;
+
+  if (isDelivery && !payload.shippingAddress?.addressLine?.trim()) {
+    throw new AppError(
+      "Delivery orders require a shipping address",
+      400,
+      "SHIPPING_ADDRESS_REQUIRED"
+    );
+  }
+
+  if (!isDelivery && !payload.storeId) {
+    throw new AppError(
+      "Store pickup orders require a store",
+      400,
+      "PICKUP_STORE_REQUIRED"
+    );
+  }
+
+  const shippingFee = isDelivery ? DELIVERY_FEE_VND : 0;
+
   return runInTransaction(async (session) => {
     const items = await buildOrderItems(payload.items, session);
     await inventoryService.reserveStock(payload.storeId, items, session);
@@ -126,20 +147,22 @@ const createOnlineOrder = async (payload, customer) => {
       customerId: customer._id,
       customerName: customer.fullName,
       customerPhone: customer.phone,
-      shippingAddress: payload.shippingAddress || null,
+      shippingAddress: isDelivery ? payload.shippingAddress : null,
       storeId: payload.storeId,
       items,
       subtotal: 0,
+      shippingFee,
       totalPrice: 0,
       status: ORDER_STATUSES.PENDING,
-      paymentStatus: PAYMENT_STATUSES.UNPAID,
-      paymentMethod: payload.paymentMethod || PAYMENT_METHODS.COD,
+      paymentStatus: PAYMENT_STATUSES.PAID,
+      paymentMethod: PAYMENT_METHODS.ONLINE_PAYMENT,
+      paidAt: new Date(),
       inventoryReserved: true,
       statusHistory: [
         {
           status: ORDER_STATUSES.PENDING,
           changedBy: customer._id,
-          note: "Online order created",
+          note: "Online order created and paid online",
         },
       ],
     });
@@ -422,7 +445,40 @@ const getOrdersForUser = async (user, filters = {}) => {
     query.channel = filters.channel;
   }
 
-  return Order.find(query).sort({ createdAt: -1 }).lean();
+  return Order.find(query)
+    .populate("storeId", "name address phone")
+    .sort({ createdAt: -1 })
+    .lean();
+};
+
+const getOrderForUser = async (orderId, user) => {
+  if (!mongoose.isValidObjectId(orderId)) {
+    throw new AppError("Order ID is invalid", 400, "INVALID_ORDER_ID");
+  }
+
+  const order = await Order.findById(orderId)
+    .populate("storeId", "name address phone")
+    .lean();
+
+  if (!order) {
+    throw new AppError("Order was not found", 404, "ORDER_NOT_FOUND");
+  }
+
+  if (
+    user.role === USER_ROLES.CUSTOMER &&
+    String(order.customerId) !== String(user._id)
+  ) {
+    throw new AppError("You cannot view this order", 403, "FORBIDDEN");
+  }
+
+  if (
+    [USER_ROLES.MANAGER, USER_ROLES.SALES].includes(user.role) &&
+    String(order.storeId?._id) !== String(user.storeId)
+  ) {
+    throw new AppError("You cannot view this order", 403, "FORBIDDEN");
+  }
+
+  return order;
 };
 
 module.exports = {
@@ -431,6 +487,7 @@ module.exports = {
   createOfflineOrder,
   createOnlineOrder,
   generateOrderCode,
+  getOrderForUser,
   getOrdersForUser,
   payOfflineOrder,
   updateOnlineStatus,
