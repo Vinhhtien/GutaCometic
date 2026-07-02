@@ -16,6 +16,9 @@ export type Product = {
   originalPrice?: number | null;
   category: string;
   skinTypes: string[];
+  volume?: string;
+  origin?: string;
+  expiryDate?: string;
   ingredients?: ProductIngredient[];
   rating?: number;
   reviewCount?: number;

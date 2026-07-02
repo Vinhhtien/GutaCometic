@@ -8,6 +8,7 @@
     "dev": "nodemon server.js",
     "start": "node server.js",
     "seed": "node seed.js",
+    "seed:real-products": "node seedRealProducts.js",
     "check:transactions": "node scripts/checkTransactions.js",
     "check:email": "node scripts/checkEmailOtp.js",
     "db:sync-user-indexes": "node scripts/syncUserIndexes.js"

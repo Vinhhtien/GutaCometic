@@ -1,6 +1,16 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useEffect, useRef, useState } from "react";
+import {
+  Alert,
+  Image,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useCart } from "@/contexts/CartContext";
 import { CartItem } from "@/types/cart";
@@ -10,6 +20,21 @@ const formatPrice = (price: number) =>
 
 export default function CartScreen() {
   const { items, removeItem, setQuantity, subtotal } = useCart();
+
+  const requestRemoveItem = (productId: string, onCancel?: () => void) => {
+    Alert.alert(
+      "Xác nhận xóa",
+      "Bạn có chắc chắn muốn xóa sản phẩm này ra khỏi giỏ hàng không?",
+      [
+        { text: "Hủy bỏ", style: "cancel", onPress: onCancel },
+        {
+          text: "Xác nhận xóa",
+          style: "destructive",
+          onPress: () => removeItem(productId),
+        },
+      ]
+    );
+  };
 
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
@@ -49,11 +74,14 @@ export default function CartScreen() {
           >
             {items.map((item) => (
               <CartLineItem
-                key={item.productId}
                 item={item}
-                onDecrease={() => setQuantity(item.productId, item.quantity - 1)}
-                onIncrease={() => setQuantity(item.productId, item.quantity + 1)}
-                onRemove={() => removeItem(item.productId)}
+                key={item.productId}
+                onQuantityChange={(quantity) =>
+                  setQuantity(item.productId, quantity)
+                }
+                onRequestRemove={(onCancel) =>
+                  requestRemoveItem(item.productId, onCancel)
+                }
               />
             ))}
           </ScrollView>
@@ -78,15 +106,74 @@ export default function CartScreen() {
 
 function CartLineItem({
   item,
-  onDecrease,
-  onIncrease,
-  onRemove,
+  onQuantityChange,
+  onRequestRemove,
 }: {
   item: CartItem;
-  onDecrease: () => void;
-  onIncrease: () => void;
-  onRemove: () => void;
+  onQuantityChange: (quantity: number) => void;
+  onRequestRemove: (onCancel?: () => void) => void;
 }) {
+  const [quantityText, setQuantityText] = useState(String(item.quantity));
+  const hasPromptedRemoveRef = useRef(false);
+
+  useEffect(() => {
+    setQuantityText(String(item.quantity));
+    hasPromptedRemoveRef.current = false;
+  }, [item.quantity]);
+
+  const confirmRemove = () => {
+    if (hasPromptedRemoveRef.current) {
+      return;
+    }
+
+    hasPromptedRemoveRef.current = true;
+    onRequestRemove(() => {
+      hasPromptedRemoveRef.current = false;
+      setQuantityText("1");
+    });
+  };
+
+  const handleDecrease = () => {
+    if (item.quantity <= 1) {
+      confirmRemove();
+      return;
+    }
+
+    onQuantityChange(item.quantity - 1);
+  };
+
+  const handleIncrease = () => {
+    onQuantityChange(item.quantity + 1);
+  };
+
+  const handleChangeText = (text: string) => {
+    const digitsOnly = text.replace(/[^0-9]/g, "");
+    setQuantityText(digitsOnly);
+
+    const parsed = parseInt(digitsOnly, 10);
+
+    if (digitsOnly === "" || parsed === 0) {
+      confirmRemove();
+      return;
+    }
+
+    if (!Number.isNaN(parsed)) {
+      onQuantityChange(parsed);
+    }
+  };
+
+  const handleBlur = () => {
+    const parsed = parseInt(quantityText, 10);
+
+    if (quantityText === "" || Number.isNaN(parsed) || parsed < 1) {
+      setQuantityText("1");
+
+      if (item.quantity !== 1) {
+        onQuantityChange(1);
+      }
+    }
+  };
+
   return (
     <View style={styles.card}>
       {item.image ? (
@@ -104,19 +191,38 @@ function CartLineItem({
         <Text style={styles.itemPrice}>{formatPrice(item.unitPrice)}</Text>
 
         <View style={styles.quantityRow}>
-          <Pressable onPress={onDecrease} style={styles.quantityButton}>
-            <Ionicons color="#252525" name="remove" size={16} />
-          </Pressable>
-          <Text style={styles.quantityValue}>{item.quantity}</Text>
-          <Pressable onPress={onIncrease} style={styles.quantityButton}>
-            <Ionicons color="#252525" name="add" size={16} />
-          </Pressable>
+          <Text style={styles.quantityLabel}>Số lượng</Text>
+          <View style={styles.quantityStepper}>
+            <Pressable
+              accessibilityLabel="Giảm số lượng"
+              hitSlop={8}
+              onPress={handleDecrease}
+              style={styles.quantityStepButton}
+            >
+              <Ionicons color="#252525" name="remove" size={14} />
+            </Pressable>
+            <TextInput
+              keyboardType="numeric"
+              onBlur={handleBlur}
+              onChangeText={handleChangeText}
+              style={styles.quantityInput}
+              value={quantityText}
+            />
+            <Pressable
+              accessibilityLabel="Tăng số lượng"
+              hitSlop={8}
+              onPress={handleIncrease}
+              style={styles.quantityStepButton}
+            >
+              <Ionicons color="#252525" name="add" size={14} />
+            </Pressable>
+          </View>
         </View>
       </View>
 
       <Pressable
         accessibilityLabel="Xoá sản phẩm"
-        onPress={onRemove}
+        onPress={() => onRequestRemove()}
         style={styles.removeButton}
       >
         <Ionicons color="#9a9c98" name="trash-outline" size={18} />
@@ -237,20 +343,37 @@ const styles = StyleSheet.create({
   quantityRow: {
     flexDirection: "row",
     alignItems: "center",
+    justifyContent: "space-between",
     gap: 12,
     marginTop: 8,
   },
-  quantityButton: {
+  quantityLabel: {
+    color: "#8c8e8a",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  quantityStepper: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#dedfdb",
+    borderRadius: 8,
+    overflow: "hidden",
+  },
+  quantityStepButton: {
     width: 28,
     height: 28,
     alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#dedfdb",
-    borderRadius: 14,
+    backgroundColor: "#f7f7f6",
   },
-  quantityValue: {
-    minWidth: 18,
+  quantityInput: {
+    minWidth: 36,
+    height: 28,
+    borderLeftWidth: 1,
+    borderRightWidth: 1,
+    borderColor: "#dedfdb",
+    paddingVertical: 0,
     color: "#212121",
     fontSize: 13,
     fontWeight: "800",

@@ -73,6 +73,21 @@ const productSchema = new mongoose.Schema(
       type: [String],
       default: [],
     },
+    volume: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    origin: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    expiryDate: {
+      type: String,
+      default: "",
+      trim: true,
+    },
     ingredients: {
       type: [ingredientSchema],
       default: [],

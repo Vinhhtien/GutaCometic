@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -34,9 +34,14 @@ const formatPrice = (price: number) =>
 
 export default function CategoryScreen() {
   const { token } = useAuth();
+  const params = useLocalSearchParams<{
+    selectedCategory?: string;
+    search?: string;
+  }>();
   const [products, setProducts] = useState<Product[]>([]);
-  const [searchText, setSearchText] = useState("");
-  const [search, setSearch] = useState("");
+  const [searchText, setSearchText] = useState(params.search ?? "");
+  const [search, setSearch] = useState(params.search ?? "");
+  const [category, setCategory] = useState(params.selectedCategory ?? "");
   const [skinType, setSkinType] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -59,6 +64,14 @@ export default function CategoryScreen() {
     };
   }, [searchText]);
 
+  // Home screen navigates here with fresh params (e.g. tapping another
+  // category chip while already on this screen), so keep local state in sync.
+  useEffect(() => {
+    setSearchText(params.search ?? "");
+    setSearch(params.search ?? "");
+    setCategory(params.selectedCategory ?? "");
+  }, [params.search, params.selectedCategory]);
+
   const loadProducts = useCallback(async () => {
     if (!token) {
       return;
@@ -66,14 +79,14 @@ export default function CategoryScreen() {
 
     try {
       setError("");
-      setProducts(await getProducts(token, { search, skinType }));
+      setProducts(await getProducts(token, { search, skinType, category }));
     } catch (requestError) {
       setError(getErrorMessage(requestError));
     } finally {
       setIsLoading(false);
       setIsRefreshing(false);
     }
-  }, [token, search, skinType]);
+  }, [token, search, skinType, category]);
 
   useEffect(() => {
     setIsLoading(true);
@@ -126,6 +139,21 @@ export default function CategoryScreen() {
                 <Ionicons color="#ffffff" name="options-outline" size={19} />
               </Pressable>
             </View>
+
+            {category ? (
+              <View style={styles.activeCategoryBar}>
+                <Text style={styles.activeCategoryText}>
+                  Danh mục: {category}
+                </Text>
+                <Pressable
+                  accessibilityLabel="Bỏ chọn danh mục"
+                  onPress={() => setCategory("")}
+                  hitSlop={8}
+                >
+                  <Ionicons color="#252525" name="close-circle" size={18} />
+                </Pressable>
+              </View>
+            ) : null}
 
             <ScrollView
               contentContainerStyle={styles.filterList}
@@ -272,6 +300,23 @@ const styles = StyleSheet.create({
     marginRight: 4,
     borderRadius: 9,
     backgroundColor: "#252525",
+  },
+  activeCategoryBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 14,
+    borderWidth: 1,
+    borderColor: "#d9dad6",
+    borderRadius: 10,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    backgroundColor: "#ffffff",
+  },
+  activeCategoryText: {
+    color: "#2d2e2c",
+    fontSize: 13,
+    fontWeight: "700",
   },
   filterList: {
     gap: 8,

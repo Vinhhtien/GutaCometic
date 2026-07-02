@@ -6,12 +6,16 @@ import {
   Dimensions,
   FlatList,
   Image,
+  Keyboard,
+  KeyboardAvoidingView,
   NativeScrollEvent,
   NativeSyntheticEvent,
+  Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -86,6 +90,30 @@ function StarRow({ rating, size = 14 }: { rating: number; size?: number }) {
   );
 }
 
+function SpecRow({
+  icon,
+  label,
+  value,
+  isLast,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+  isLast?: boolean;
+}) {
+  return (
+    <View style={[styles.specRow, !isLast && styles.specRowDivider]}>
+      <View style={styles.specLabelGroup}>
+        <Ionicons color="#8c8e8a" name={icon} size={16} />
+        <Text style={styles.specLabel}>{label}</Text>
+      </View>
+      <Text numberOfLines={1} style={styles.specValue}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
 export default function ProductDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const insets = useSafeAreaInsets();
@@ -99,6 +127,8 @@ export default function ProductDetailScreen() {
   const [activeImageIndex, setActiveImageIndex] = useState(0);
   const [areReviewsExpanded, setAreReviewsExpanded] = useState(false);
   const [justAdded, setJustAdded] = useState(false);
+  const [quantity, setQuantity] = useState(1);
+  const [quantityText, setQuantityText] = useState("1");
   const addedFeedbackTimeout = useRef<ReturnType<typeof setTimeout> | null>(
     null
   );
@@ -188,8 +218,46 @@ export default function ProductDetailScreen() {
     setActiveImageIndex(nextIndex);
   };
 
+  const handleDecreaseQuantity = () => {
+    setQuantity((prev) => {
+      const next = Math.max(1, prev - 1);
+      setQuantityText(String(next));
+      return next;
+    });
+  };
+
+  const handleIncreaseQuantity = () => {
+    setQuantity((prev) => {
+      const next = prev + 1;
+      setQuantityText(String(next));
+      return next;
+    });
+  };
+
+  const handleQuantityChangeText = (text: string) => {
+    const digitsOnly = text.replace(/[^0-9]/g, "");
+    setQuantityText(digitsOnly);
+
+    const parsed = parseInt(digitsOnly, 10);
+    if (!Number.isNaN(parsed) && parsed >= 1) {
+      setQuantity(parsed);
+    }
+  };
+
+  const handleQuantityBlur = () => {
+    const parsed = parseInt(quantityText, 10);
+
+    if (quantityText === "" || Number.isNaN(parsed) || parsed < 1) {
+      setQuantity(1);
+      setQuantityText("1");
+      return;
+    }
+
+    setQuantityText(String(parsed));
+  };
+
   const handleAddToCart = () => {
-    addItem({ product, quantity: 1 });
+    addItem({ product, quantity });
     setJustAdded(true);
 
     if (addedFeedbackTimeout.current) {
@@ -202,16 +270,23 @@ export default function ProductDetailScreen() {
   };
 
   const handleBuyNow = () => {
-    addItem({ product, quantity: 1 });
+    addItem({ product, quantity });
     router.push("/customer/checkout");
   };
 
   return (
-    <View style={styles.screen}>
-      <ScrollView
-        contentContainerStyle={styles.scrollContent}
-        showsVerticalScrollIndicator={false}
-      >
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={Platform.OS === "ios" ? 90 : 0}
+      style={styles.screen}
+    >
+      <View style={styles.screen}>
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          onScrollBeginDrag={Keyboard.dismiss}
+          showsVerticalScrollIndicator={false}
+        >
         <View style={styles.mediaSection}>
           <FlatList
             data={images}
@@ -297,6 +372,45 @@ export default function ProductDetailScreen() {
           </View>
         </View>
 
+        {product.description ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>MÔ TẢ SẢN PHẨM</Text>
+            <Text style={styles.descriptionText}>{product.description}</Text>
+          </View>
+        ) : null}
+
+        {product.volume || product.origin || product.expiryDate ? (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>THÔNG TIN SẢN PHẨM</Text>
+            <View style={styles.specsCard}>
+              {product.volume ? (
+                <SpecRow
+                  icon="cube-outline"
+                  isLast={!product.origin && !product.expiryDate}
+                  label="Dung tích"
+                  value={product.volume}
+                />
+              ) : null}
+              {product.origin ? (
+                <SpecRow
+                  icon="earth-outline"
+                  isLast={!product.expiryDate}
+                  label="Xuất xứ"
+                  value={product.origin}
+                />
+              ) : null}
+              {product.expiryDate ? (
+                <SpecRow
+                  icon="calendar-outline"
+                  isLast
+                  label="Hạn sử dụng"
+                  value={product.expiryDate}
+                />
+              ) : null}
+            </View>
+          </View>
+        ) : null}
+
         {product.ingredients && product.ingredients.length > 0 ? (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>THÀNH PHẦN NỔI BẬT</Text>
@@ -364,21 +478,51 @@ export default function ProductDetailScreen() {
       </ScrollView>
 
       <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 12 }]}>
-        <Pressable onPress={handleAddToCart} style={styles.addToCartButton}>
-          <Ionicons
-            color="#252525"
-            name={justAdded ? "checkmark" : "bag-add-outline"}
-            size={18}
-          />
-          <Text style={styles.addToCartButtonText}>
-            {justAdded ? "Đã thêm" : "Thêm vào giỏ"}
-          </Text>
-        </Pressable>
-        <Pressable onPress={handleBuyNow} style={styles.buyNowButton}>
-          <Text style={styles.buyNowButtonText}>Mua ngay</Text>
-        </Pressable>
+        <View style={styles.quantitySelectorRow}>
+          <Text style={styles.quantityLabel}>Số lượng</Text>
+          <View style={styles.quantityControls}>
+            <Pressable
+              accessibilityLabel="Giảm số lượng"
+              onPress={handleDecreaseQuantity}
+              style={styles.quantityStepButton}
+            >
+              <Ionicons color="#252525" name="remove" size={16} />
+            </Pressable>
+            <TextInput
+              keyboardType="numeric"
+              onBlur={handleQuantityBlur}
+              onChangeText={handleQuantityChangeText}
+              style={styles.quantityInput}
+              value={quantityText}
+            />
+            <Pressable
+              accessibilityLabel="Tăng số lượng"
+              onPress={handleIncreaseQuantity}
+              style={styles.quantityStepButton}
+            >
+              <Ionicons color="#252525" name="add" size={16} />
+            </Pressable>
+          </View>
+        </View>
+
+        <View style={styles.actionButtonsRow}>
+          <Pressable onPress={handleAddToCart} style={styles.addToCartButton}>
+            <Ionicons
+              color="#252525"
+              name={justAdded ? "checkmark" : "bag-add-outline"}
+              size={18}
+            />
+            <Text style={styles.addToCartButtonText}>
+              {justAdded ? "Đã thêm" : "Thêm vào giỏ"}
+            </Text>
+          </Pressable>
+          <Pressable onPress={handleBuyNow} style={styles.buyNowButton}>
+            <Text style={styles.buyNowButtonText}>Mua ngay</Text>
+          </Pressable>
+        </View>
       </View>
-    </View>
+      </View>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -556,6 +700,47 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     letterSpacing: 0.4,
   },
+  descriptionText: {
+    marginTop: 10,
+    color: "#5c5e5b",
+    fontSize: 13,
+    lineHeight: 20,
+  },
+  specsCard: {
+    marginTop: 12,
+    borderRadius: 16,
+    paddingHorizontal: 14,
+    backgroundColor: "#ffffff",
+    boxShadow: "0 2px 10px rgba(37, 37, 37, 0.06)",
+  },
+  specRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 10,
+    paddingVertical: 13,
+  },
+  specRowDivider: {
+    borderBottomWidth: 1,
+    borderBottomColor: "#f1f2ef",
+  },
+  specLabelGroup: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  specLabel: {
+    color: "#8c8e8a",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  specValue: {
+    flex: 1,
+    color: "#212121",
+    fontSize: 13,
+    fontWeight: "800",
+    textAlign: "right",
+  },
   ingredientCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -648,12 +833,52 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    flexDirection: "row",
-    gap: 10,
     paddingHorizontal: 18,
     paddingTop: 12,
     backgroundColor: "#ffffff",
     boxShadow: "0 -4px 14px rgba(37, 37, 37, 0.08)",
+  },
+  quantitySelectorRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 12,
+  },
+  quantityLabel: {
+    color: "#5c5e5b",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  quantityControls: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+  },
+  quantityStepButton: {
+    width: 34,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#dedfdb",
+    borderRadius: 8,
+    backgroundColor: "#f7f7f6",
+  },
+  quantityInput: {
+    minWidth: 48,
+    height: 34,
+    borderWidth: 1,
+    borderColor: "#dedfdb",
+    borderRadius: 8,
+    paddingVertical: 0,
+    textAlign: "center",
+    color: "#212121",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  actionButtonsRow: {
+    flexDirection: "row",
+    gap: 10,
   },
   addToCartButton: {
     flex: 4,
