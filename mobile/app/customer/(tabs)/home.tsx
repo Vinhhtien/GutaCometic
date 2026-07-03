@@ -28,21 +28,26 @@ const quickMenus = [
   { label: "Stores", icon: "storefront-outline" },
 ] as const;
 
-const categories = [
-  "All",
-  "Cleanser",
-  "Serum",
-  "Moisturizer",
-  "Sunscreen",
-];
+const RECOMMENDED_LIMIT = 6;
+
+const shopCategories = [
+  { label: "Chăm Sóc Da Mặt", icon: "sparkles-outline" },
+  { label: "Trang Điểm", icon: "color-palette-outline" },
+  { label: "Chăm Sóc Cơ Thể", icon: "water-outline" },
+  { label: "Chăm Sóc Tóc", icon: "cut-outline" },
+  { label: "Nước Hoa", icon: "flask-outline" },
+  { label: "Dụng Cụ Làm Đẹp", icon: "brush-outline" },
+] as const;
+
+const formatPrice = (price: number) =>
+  `${new Intl.NumberFormat("vi-VN").format(price)}đ`;
 
 export default function HomeScreen() {
   const { isLoading, token, user } = useAuth();
-  const { itemCount, subtotal } = useCart();
+  const { items: cartItems, itemCount, subtotal } = useCart();
   const [products, setProducts] = useState<Product[]>([]);
   const [error, setError] = useState("");
-  const [query, setQuery] = useState("");
-  const [activeCategory, setActiveCategory] = useState("All");
+  const [searchText, setSearchText] = useState("");
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [isProductsLoading, setIsProductsLoading] = useState(true);
 
@@ -84,12 +89,31 @@ export default function HomeScreen() {
     loadProducts();
   };
 
+  const goToCategorySearch = () => {
+    const trimmed = searchText.trim();
+    if (!trimmed) {
+      return;
+    }
+    router.push({ pathname: "/customer/category", params: { search: trimmed } });
+  };
+
+  const goToCategory = (categoryName: string) => {
+    router.push({
+      pathname: "/customer/category",
+      params: { selectedCategory: categoryName },
+    });
+  };
+
+  const recommendedProducts = products.slice(0, RECOMMENDED_LIMIT);
+
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
       <FlatList
-        columnWrapperStyle={products.length > 0 ? styles.productRow : undefined}
+        columnWrapperStyle={
+          recommendedProducts.length > 0 ? styles.productRow : undefined
+        }
         contentContainerStyle={styles.content}
-        data={products}
+        data={recommendedProducts}
         keyExtractor={(item) => item._id}
         ListEmptyComponent={
           isProductsLoading ? (
@@ -150,17 +174,94 @@ export default function HomeScreen() {
             </View>
 
             <View style={styles.searchBar}>
-              <Ionicons color="#767676" name="search-outline" size={21} />
+              <Pressable accessibilityLabel="Tìm kiếm" onPress={goToCategorySearch}>
+                <Ionicons color="#767676" name="search-outline" size={21} />
+              </Pressable>
               <TextInput
-                onChangeText={setQuery}
+                onChangeText={setSearchText}
+                onSubmitEditing={goToCategorySearch}
                 placeholder="Search products, brands..."
                 placeholderTextColor="#8f8f8f"
+                returnKeyType="search"
                 style={styles.searchInput}
-                value={query}
+                value={searchText}
               />
-              <Pressable accessibilityLabel="Filters" style={styles.filterButton}>
-                <Ionicons color="#ffffff" name="options-outline" size={20} />
+              <Pressable
+                accessibilityLabel="Tìm kiếm"
+                onPress={goToCategorySearch}
+                style={styles.filterButton}
+              >
+                <Ionicons color="#ffffff" name="search" size={20} />
               </Pressable>
+            </View>
+
+            <View style={styles.quickCartCard}>
+              <View style={styles.quickCartHeader}>
+                <Ionicons color="#2d5a4b" name="cart-outline" size={18} />
+                <Text style={styles.quickCartTitle}>Giỏ hàng của bạn</Text>
+              </View>
+
+              {cartItems.length === 0 ? (
+                <View style={styles.quickCartEmpty}>
+                  <Ionicons color="#c7c9c4" name="bag-handle-outline" size={30} />
+                  <Text style={styles.quickCartEmptyText}>
+                    Giỏ hàng của bạn đang trống
+                  </Text>
+                  <Pressable
+                    onPress={() => router.push("/customer/category")}
+                    style={styles.quickCartButton}
+                  >
+                    <Text style={styles.quickCartButtonText}>
+                      Đi mua sắm ngay
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <>
+                  <ScrollView
+                    contentContainerStyle={styles.quickCartThumbRow}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                  >
+                    {cartItems.map((item) => (
+                      <View key={item.productId} style={styles.quickCartThumbWrap}>
+                        {item.image ? (
+                          <ImageBackground
+                            imageStyle={styles.quickCartThumbImage}
+                            source={{ uri: item.image }}
+                            style={styles.quickCartThumb}
+                          />
+                        ) : (
+                          <View style={styles.quickCartThumbPlaceholder}>
+                            <Ionicons
+                              color="#c33e53"
+                              name="leaf-outline"
+                              size={18}
+                            />
+                          </View>
+                        )}
+                        <View style={styles.quickCartThumbBadge}>
+                          <Text style={styles.quickCartThumbBadgeText}>
+                            x{item.quantity}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </ScrollView>
+
+                  <View style={styles.quickCartSummaryRow}>
+                    <Text style={styles.quickCartTotalText}>
+                      Tổng cộng: {formatPrice(subtotal)}
+                    </Text>
+                    <Pressable
+                      onPress={() => router.push("/customer/checkout")}
+                      style={styles.quickCartButton}
+                    >
+                      <Text style={styles.quickCartButtonText}>Mua ngay</Text>
+                    </Pressable>
+                  </View>
+                </>
+              )}
             </View>
 
             <ImageBackground
@@ -199,7 +300,9 @@ export default function HomeScreen() {
                 <Text style={styles.sectionTitle}>Shop by category</Text>
                 <Text style={styles.sectionCaption}>Essentials for every routine</Text>
               </View>
-              <Text style={styles.seeAll}>View all</Text>
+              <Pressable onPress={() => router.push("/customer/category")}>
+                <Text style={styles.seeAll}>View all</Text>
+              </Pressable>
             </View>
 
             <ScrollView
@@ -207,34 +310,27 @@ export default function HomeScreen() {
               horizontal
               showsHorizontalScrollIndicator={false}
             >
-              {categories.map((category) => {
-                const isActive = activeCategory === category;
-
-                return (
-                  <Pressable
-                    key={category}
-                    onPress={() => setActiveCategory(category)}
-                    style={[
-                      styles.categoryChip,
-                      isActive && styles.categoryChipActive,
-                    ]}
-                  >
-                    <Text
-                      style={[
-                        styles.categoryText,
-                        isActive && styles.categoryTextActive,
-                      ]}
-                    >
-                      {category}
-                    </Text>
-                  </Pressable>
-                );
-              })}
+              {shopCategories.map((category) => (
+                <Pressable
+                  key={category.label}
+                  onPress={() => goToCategory(category.label)}
+                  style={styles.categoryItem}
+                >
+                  <View style={styles.categoryIcon}>
+                    <Ionicons color="#c33e53" name={category.icon} size={24} />
+                  </View>
+                  <Text numberOfLines={2} style={styles.categoryLabel}>
+                    {category.label}
+                  </Text>
+                </Pressable>
+              ))}
             </ScrollView>
 
             <View style={styles.productHeading}>
               <Text style={styles.sectionTitle}>Recommended for you</Text>
-              <Text style={styles.productCount}>{products.length} items</Text>
+              <Pressable onPress={() => router.push("/customer/category")}>
+                <Text style={styles.seeAll}>View all</Text>
+              </Pressable>
             </View>
 
             {error && products.length > 0 ? (
@@ -261,7 +357,10 @@ export default function HomeScreen() {
 
       {itemCount > 0 ? (
         <View style={styles.bottomDock}>
-          <Pressable style={styles.cartBar}>
+          <Pressable
+            onPress={() => router.push("/customer/cart")}
+            style={styles.cartBar}
+          >
             <View style={styles.cartIconWrap}>
               <Ionicons color="#ffffff" name="bag-handle" size={21} />
               <View style={styles.cartCount}>
@@ -403,6 +502,101 @@ const styles = StyleSheet.create({
     borderRadius: 6,
     backgroundColor: "#252525",
   },
+  quickCartCard: {
+    marginTop: 18,
+    borderRadius: 12,
+    padding: 16,
+    backgroundColor: "#ffffff",
+    boxShadow: "0 2px 10px rgba(37, 37, 37, 0.08)",
+  },
+  quickCartHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  quickCartTitle: {
+    color: "#212121",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  quickCartEmpty: {
+    alignItems: "center",
+    paddingVertical: 14,
+  },
+  quickCartEmptyText: {
+    marginTop: 8,
+    color: "#9a9c98",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  quickCartButton: {
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 14,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    backgroundColor: "#2d5a4b",
+  },
+  quickCartButtonText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  quickCartThumbRow: {
+    gap: 10,
+    marginTop: 14,
+  },
+  quickCartThumbWrap: {
+    position: "relative",
+  },
+  quickCartThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: 10,
+    backgroundColor: "#f0f1ee",
+  },
+  quickCartThumbImage: {
+    borderRadius: 10,
+  },
+  quickCartThumbPlaceholder: {
+    width: 56,
+    height: 56,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 10,
+    backgroundColor: "#fff0f2",
+  },
+  quickCartThumbBadge: {
+    position: "absolute",
+    right: -4,
+    bottom: -4,
+    minWidth: 20,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#ffffff",
+    borderRadius: 10,
+    paddingHorizontal: 4,
+    backgroundColor: "#d9475c",
+  },
+  quickCartThumbBadgeText: {
+    color: "#ffffff",
+    fontSize: 9,
+    fontWeight: "900",
+  },
+  quickCartSummaryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 16,
+  },
+  quickCartTotalText: {
+    color: "#212121",
+    fontSize: 14,
+    fontWeight: "800",
+  },
   banner: {
     height: 180,
     justifyContent: "center",
@@ -507,30 +701,29 @@ const styles = StyleSheet.create({
     fontWeight: "800",
   },
   categoryList: {
-    gap: 8,
+    gap: 16,
     paddingTop: 14,
     paddingBottom: 4,
   },
-  categoryChip: {
-    height: 37,
+  categoryItem: {
+    width: 78,
+    alignItems: "center",
+  },
+  categoryIcon: {
+    width: 56,
+    height: 56,
+    alignItems: "center",
     justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "#d9dad6",
-    borderRadius: 7,
-    paddingHorizontal: 15,
-    backgroundColor: "#ffffff",
+    borderRadius: 28,
+    backgroundColor: "#fff0f2",
   },
-  categoryChipActive: {
-    borderColor: "#252525",
-    backgroundColor: "#252525",
-  },
-  categoryText: {
-    color: "#666865",
-    fontSize: 13,
+  categoryLabel: {
+    marginTop: 8,
+    color: "#3d3e3c",
+    fontSize: 11,
     fontWeight: "700",
-  },
-  categoryTextActive: {
-    color: "#ffffff",
+    lineHeight: 15,
+    textAlign: "center",
   },
   productHeading: {
     flexDirection: "row",
@@ -538,10 +731,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     marginTop: 25,
     marginBottom: 13,
-  },
-  productCount: {
-    color: "#858784",
-    fontSize: 12,
   },
   productRow: {
     justifyContent: "space-between",

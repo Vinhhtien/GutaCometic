@@ -1,5 +1,26 @@
 const mongoose = require("mongoose");
 
+const ingredientSchema = new mongoose.Schema(
+  {
+    icon: {
+      type: String,
+      default: "leaf-outline",
+      trim: true,
+    },
+    title: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+    subtitle: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+  },
+  { _id: false }
+);
+
 const productSchema = new mongoose.Schema(
   {
     sku: {
@@ -29,10 +50,19 @@ const productSchema = new mongoose.Schema(
       default: "",
       trim: true,
     },
+    images: {
+      type: [String],
+      default: [],
+    },
     price: {
       type: Number,
       required: true,
       min: 0,
+    },
+    originalPrice: {
+      type: Number,
+      min: 0,
+      default: null,
     },
     category: {
       type: String,
@@ -41,6 +71,25 @@ const productSchema = new mongoose.Schema(
     },
     skinTypes: {
       type: [String],
+      default: [],
+    },
+    volume: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    origin: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    expiryDate: {
+      type: String,
+      default: "",
+      trim: true,
+    },
+    ingredients: {
+      type: [ingredientSchema],
       default: [],
     },
     isActive: {

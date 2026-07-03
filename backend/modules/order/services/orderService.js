@@ -2,10 +2,12 @@ const crypto = require("crypto");
 const mongoose = require("mongoose");
 const Order = require("../../../models/Order");
 const Product = require("../../../models/Product");
+const Review = require("../../../models/Review");
 const AppError = require("../../../utils/AppError");
 const inventoryService = require("../../stock/services/inventoryService");
 const { runInTransaction } = require("../../stock/services/transactionService");
 const {
+  DELIVERY_FEE_VND,
   FULFILLMENT_TYPES,
   ORDER_CHANNELS,
   ORDER_STATUSES,
@@ -100,6 +102,11 @@ const findOrderOrThrow = async (orderId, session) => {
   return order;
 };
 
+const ONLINE_ORDER_PAYMENT_METHODS = [
+  PAYMENT_METHODS.COD,
+  PAYMENT_METHODS.BANK_TRANSFER,
+];
+
 const createOnlineOrder = async (payload, customer) => {
   assertRole(customer, [USER_ROLES.CUSTOMER]);
 
@@ -115,6 +122,37 @@ const createOnlineOrder = async (payload, customer) => {
     );
   }
 
+  const isDelivery = payload.fulfillmentType === FULFILLMENT_TYPES.DELIVERY;
+
+  if (isDelivery && !payload.shippingAddress?.addressLine?.trim()) {
+    throw new AppError(
+      "Delivery orders require a shipping address",
+      400,
+      "SHIPPING_ADDRESS_REQUIRED"
+    );
+  }
+
+  if (!isDelivery && !payload.storeId) {
+    throw new AppError(
+      "Store pickup orders require a store",
+      400,
+      "PICKUP_STORE_REQUIRED"
+    );
+  }
+
+  const paymentMethod = payload.paymentMethod || PAYMENT_METHODS.COD;
+
+  if (!ONLINE_ORDER_PAYMENT_METHODS.includes(paymentMethod)) {
+    throw new AppError(
+      "Payment method must be COD or bank transfer",
+      400,
+      "INVALID_PAYMENT_METHOD"
+    );
+  }
+
+  const shippingFee = isDelivery ? DELIVERY_FEE_VND : 0;
+  const isBankTransfer = paymentMethod === PAYMENT_METHODS.BANK_TRANSFER;
+
   return runInTransaction(async (session) => {
     const items = await buildOrderItems(payload.items, session);
     await inventoryService.reserveStock(payload.storeId, items, session);
@@ -126,20 +164,26 @@ const createOnlineOrder = async (payload, customer) => {
       customerId: customer._id,
       customerName: customer.fullName,
       customerPhone: customer.phone,
-      shippingAddress: payload.shippingAddress || null,
+      shippingAddress: isDelivery ? payload.shippingAddress : null,
       storeId: payload.storeId,
       items,
       subtotal: 0,
+      shippingFee,
       totalPrice: 0,
       status: ORDER_STATUSES.PENDING,
-      paymentStatus: PAYMENT_STATUSES.UNPAID,
-      paymentMethod: payload.paymentMethod || PAYMENT_METHODS.COD,
+      paymentStatus: isBankTransfer
+        ? PAYMENT_STATUSES.PAID
+        : PAYMENT_STATUSES.UNPAID,
+      paymentMethod,
+      paidAt: isBankTransfer ? new Date() : null,
       inventoryReserved: true,
       statusHistory: [
         {
           status: ORDER_STATUSES.PENDING,
           changedBy: customer._id,
-          note: "Online order created",
+          note: isBankTransfer
+            ? "Online order created, payment confirmed via bank transfer"
+            : "Online order created, to be paid on delivery (COD)",
         },
       ],
     });
@@ -398,6 +442,47 @@ const cancelOrder = (orderId, actor, reason = "") =>
     return order;
   });
 
+const NEEDS_REVIEW_FILTER = "NEEDS_REVIEW";
+
+const getOrdersNeedingReview = async (query, user) => {
+  const completedOrders = await Order.find({
+    ...query,
+    status: ORDER_STATUSES.COMPLETED,
+  })
+    .populate("storeId", "name address phone")
+    .sort({ createdAt: -1 })
+    .lean();
+
+  if (completedOrders.length === 0) {
+    return completedOrders;
+  }
+
+  const productIds = [
+    ...new Set(
+      completedOrders.flatMap((order) =>
+        order.items.map((item) => String(item.productId))
+      )
+    ),
+  ];
+
+  const reviewedProductIds = new Set(
+    (
+      await Review.find({
+        customerId: user._id,
+        productId: { $in: productIds },
+      })
+        .select("productId")
+        .lean()
+    ).map((review) => String(review.productId))
+  );
+
+  return completedOrders.filter((order) =>
+    order.items.some(
+      (item) => !reviewedProductIds.has(String(item.productId))
+    )
+  );
+};
+
 const getOrdersForUser = async (user, filters = {}) => {
   const query = {};
 
@@ -414,15 +499,56 @@ const getOrdersForUser = async (user, filters = {}) => {
     query.storeId = user.storeId;
   }
 
-  if (filters.status) {
-    query.status = filters.status;
-  }
-
   if (filters.channel) {
     query.channel = filters.channel;
   }
 
-  return Order.find(query).sort({ createdAt: -1 }).lean();
+  if (filters.status === NEEDS_REVIEW_FILTER) {
+    return getOrdersNeedingReview(query, user);
+  }
+
+  if (filters.status) {
+    const statusList = String(filters.status)
+      .split(",")
+      .map((status) => status.trim())
+      .filter(Boolean);
+    query.status = statusList.length > 1 ? { $in: statusList } : statusList[0];
+  }
+
+  return Order.find(query)
+    .populate("storeId", "name address phone")
+    .sort({ createdAt: -1 })
+    .lean();
+};
+
+const getOrderForUser = async (orderId, user) => {
+  if (!mongoose.isValidObjectId(orderId)) {
+    throw new AppError("Order ID is invalid", 400, "INVALID_ORDER_ID");
+  }
+
+  const order = await Order.findById(orderId)
+    .populate("storeId", "name address phone")
+    .lean();
+
+  if (!order) {
+    throw new AppError("Order was not found", 404, "ORDER_NOT_FOUND");
+  }
+
+  if (
+    user.role === USER_ROLES.CUSTOMER &&
+    String(order.customerId) !== String(user._id)
+  ) {
+    throw new AppError("You cannot view this order", 403, "FORBIDDEN");
+  }
+
+  if (
+    [USER_ROLES.MANAGER, USER_ROLES.SALES].includes(user.role) &&
+    String(order.storeId?._id) !== String(user.storeId)
+  ) {
+    throw new AppError("You cannot view this order", 403, "FORBIDDEN");
+  }
+
+  return order;
 };
 
 module.exports = {
@@ -431,6 +557,7 @@ module.exports = {
   createOfflineOrder,
   createOnlineOrder,
   generateOrderCode,
+  getOrderForUser,
   getOrdersForUser,
   payOfflineOrder,
   updateOnlineStatus,

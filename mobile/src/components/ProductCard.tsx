@@ -1,5 +1,8 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { router } from "expo-router";
+import { Alert, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { useCart } from "@/contexts/CartContext";
+import { useWishlist } from "@/contexts/WishlistContext";
 import { Product } from "@/types/product";
 
 type ProductCardProps = {
@@ -10,8 +13,29 @@ const formatPrice = (price: number) =>
   `${new Intl.NumberFormat("vi-VN").format(price)} VND`;
 
 export function ProductCard({ product }: ProductCardProps) {
+  const { addItem } = useCart();
+  const { isLiked, toggleLike } = useWishlist();
+  const isFavorite = isLiked(product._id);
+
+  const handleQuickAddToCart = () => {
+    addItem({ product, quantity: 1 });
+    Alert.alert(
+      "Thêm vào giỏ hàng",
+      `Đã thêm 1 sản phẩm "${product.name}" vào giỏ hàng.`,
+      [{ text: "OK", style: "default" }]
+    );
+  };
+
   return (
-    <View style={styles.card}>
+    <Pressable
+      onPress={() =>
+        router.push({
+          pathname: "/customer/product-detail",
+          params: { id: product._id },
+        })
+      }
+      style={styles.card}
+    >
       <View style={styles.media}>
         {product.image ? (
           <Image source={{ uri: product.image }} style={styles.image} />
@@ -21,8 +45,16 @@ export function ProductCard({ product }: ProductCardProps) {
             <Text style={styles.placeholderText}>GUTA</Text>
           </View>
         )}
-        <Pressable accessibilityLabel="Save product" style={styles.favoriteButton}>
-          <Ionicons color="#40413f" name="heart-outline" size={18} />
+        <Pressable
+          accessibilityLabel="Yêu thích"
+          onPress={() => toggleLike(product)}
+          style={styles.favoriteButton}
+        >
+          <Ionicons
+            color={isFavorite ? "#d9475c" : "#40413f"}
+            name={isFavorite ? "heart" : "heart-outline"}
+            size={18}
+          />
         </Pressable>
       </View>
 
@@ -39,12 +71,16 @@ export function ProductCard({ product }: ProductCardProps) {
           <Text numberOfLines={1} style={styles.category}>
             {product.category}
           </Text>
-          <Pressable accessibilityLabel="Add product" style={styles.addButton}>
+          <Pressable
+            accessibilityLabel="Thêm vào giỏ hàng"
+            onPress={handleQuickAddToCart}
+            style={styles.addButton}
+          >
             <Ionicons color="#ffffff" name="add" size={19} />
           </Pressable>
         </View>
       </View>
-    </View>
+    </Pressable>
   );
 }
 
