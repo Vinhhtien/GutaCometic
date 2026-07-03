@@ -20,6 +20,7 @@ import { useCart } from "@/contexts/CartContext";
 import { getErrorMessage } from "@/services/api";
 import { createOnlineOrder } from "@/services/orderService";
 import { getStores } from "@/services/storeService";
+import { PaymentMethod } from "@/types/order";
 import { Store } from "@/types/store";
 
 const DELIVERY_FEE = 25000;
@@ -29,6 +30,15 @@ const formatPrice = (price: number) =>
 
 type FulfillmentType = "DELIVERY" | "STORE_PICKUP";
 type CheckoutStep = 1 | 2;
+
+const PAYMENT_METHOD_OPTIONS: {
+  value: PaymentMethod;
+  label: string;
+  icon: keyof typeof Ionicons.glyphMap;
+}[] = [
+  { value: "COD", label: "Thanh toán khi nhận hàng (COD)", icon: "cash-outline" },
+  { value: "BANK_TRANSFER", label: "Chuyển khoản ngân hàng", icon: "card-outline" },
+];
 
 export default function CheckoutScreen() {
   const { token, user } = useAuth();
@@ -47,6 +57,7 @@ export default function CheckoutScreen() {
   const [recipientName, setRecipientName] = useState(user?.fullName ?? "");
   const [phone, setPhone] = useState(user?.phone ?? "");
   const [addressLine, setAddressLine] = useState(user?.address ?? "");
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("COD");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const isDelivery = fulfillmentType === "DELIVERY";
@@ -130,6 +141,10 @@ export default function CheckoutScreen() {
       return;
     }
 
+    const effectivePaymentMethod: PaymentMethod = isDelivery
+      ? paymentMethod
+      : "COD";
+
     try {
       setIsSubmitting(true);
       const order = await createOnlineOrder(token, {
@@ -147,10 +162,15 @@ export default function CheckoutScreen() {
             }
           : null,
         shippingFee,
-        paymentMethod: "ONLINE_PAYMENT",
+        paymentMethod: effectivePaymentMethod,
       });
 
-      Alert.alert("Bạn đã thanh toán thành công!", undefined, [
+      const successMessage =
+        effectivePaymentMethod === "BANK_TRANSFER"
+          ? "Bạn đã thanh toán thành công!"
+          : "Bạn đã đặt hàng thành công!";
+
+      Alert.alert(successMessage, undefined, [
         {
           text: "OK",
           onPress: async () => {
@@ -489,6 +509,57 @@ export default function CheckoutScreen() {
                 ))}
               </View>
 
+              {isDelivery ? (
+                <>
+                  <Text style={styles.sectionLabel}>
+                    PHƯƠNG THỨC THANH TOÁN
+                  </Text>
+                  <View style={styles.card}>
+                    {PAYMENT_METHOD_OPTIONS.map((option, index) => {
+                      const isSelected = paymentMethod === option.value;
+
+                      return (
+                        <View key={option.value}>
+                          <Pressable
+                            onPress={() => setPaymentMethod(option.value)}
+                            style={styles.paymentOptionRow}
+                          >
+                            <View
+                              style={[
+                                styles.radioOuter,
+                                isSelected && styles.radioOuterActive,
+                              ]}
+                            >
+                              {isSelected ? (
+                                <View style={styles.radioInner} />
+                              ) : null}
+                            </View>
+                            <View style={styles.paymentOptionIcon}>
+                              <Ionicons
+                                color={isSelected ? "#2d5a4b" : "#6f716e"}
+                                name={option.icon}
+                                size={18}
+                              />
+                            </View>
+                            <Text
+                              style={[
+                                styles.paymentOptionLabel,
+                                isSelected && styles.paymentOptionLabelActive,
+                              ]}
+                            >
+                              {option.label}
+                            </Text>
+                          </Pressable>
+                          {index < PAYMENT_METHOD_OPTIONS.length - 1 ? (
+                            <View style={styles.divider} />
+                          ) : null}
+                        </View>
+                      );
+                    })}
+                  </View>
+                </>
+              ) : null}
+
               <Text style={styles.sectionLabel}>CHI TIẾT THANH TOÁN</Text>
               <View style={styles.card}>
                 <View style={styles.orderItemRow}>
@@ -749,6 +820,26 @@ const styles = StyleSheet.create({
     marginTop: 2,
     color: "#8c8e8a",
     fontSize: 12,
+  },
+  paymentOptionRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    paddingVertical: 14,
+  },
+  paymentOptionIcon: {
+    width: 26,
+    alignItems: "center",
+  },
+  paymentOptionLabel: {
+    flex: 1,
+    color: "#3d3e3c",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  paymentOptionLabelActive: {
+    color: "#212121",
+    fontWeight: "800",
   },
   summaryRow: {
     flexDirection: "row",

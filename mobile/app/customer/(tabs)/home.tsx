@@ -39,9 +39,12 @@ const shopCategories = [
   { label: "Dụng Cụ Làm Đẹp", icon: "brush-outline" },
 ] as const;
 
+const formatPrice = (price: number) =>
+  `${new Intl.NumberFormat("vi-VN").format(price)}đ`;
+
 export default function HomeScreen() {
   const { isLoading, token, user } = useAuth();
-  const { itemCount, subtotal } = useCart();
+  const { items: cartItems, itemCount, subtotal } = useCart();
   const [products, setProducts] = useState<Product[]>([]);
   const [error, setError] = useState("");
   const [searchText, setSearchText] = useState("");
@@ -190,6 +193,75 @@ export default function HomeScreen() {
               >
                 <Ionicons color="#ffffff" name="search" size={20} />
               </Pressable>
+            </View>
+
+            <View style={styles.quickCartCard}>
+              <View style={styles.quickCartHeader}>
+                <Ionicons color="#2d5a4b" name="cart-outline" size={18} />
+                <Text style={styles.quickCartTitle}>Giỏ hàng của bạn</Text>
+              </View>
+
+              {cartItems.length === 0 ? (
+                <View style={styles.quickCartEmpty}>
+                  <Ionicons color="#c7c9c4" name="bag-handle-outline" size={30} />
+                  <Text style={styles.quickCartEmptyText}>
+                    Giỏ hàng của bạn đang trống
+                  </Text>
+                  <Pressable
+                    onPress={() => router.push("/customer/category")}
+                    style={styles.quickCartButton}
+                  >
+                    <Text style={styles.quickCartButtonText}>
+                      Đi mua sắm ngay
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : (
+                <>
+                  <ScrollView
+                    contentContainerStyle={styles.quickCartThumbRow}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                  >
+                    {cartItems.map((item) => (
+                      <View key={item.productId} style={styles.quickCartThumbWrap}>
+                        {item.image ? (
+                          <ImageBackground
+                            imageStyle={styles.quickCartThumbImage}
+                            source={{ uri: item.image }}
+                            style={styles.quickCartThumb}
+                          />
+                        ) : (
+                          <View style={styles.quickCartThumbPlaceholder}>
+                            <Ionicons
+                              color="#c33e53"
+                              name="leaf-outline"
+                              size={18}
+                            />
+                          </View>
+                        )}
+                        <View style={styles.quickCartThumbBadge}>
+                          <Text style={styles.quickCartThumbBadgeText}>
+                            x{item.quantity}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </ScrollView>
+
+                  <View style={styles.quickCartSummaryRow}>
+                    <Text style={styles.quickCartTotalText}>
+                      Tổng cộng: {formatPrice(subtotal)}
+                    </Text>
+                    <Pressable
+                      onPress={() => router.push("/customer/checkout")}
+                      style={styles.quickCartButton}
+                    >
+                      <Text style={styles.quickCartButtonText}>Mua ngay</Text>
+                    </Pressable>
+                  </View>
+                </>
+              )}
             </View>
 
             <ImageBackground
@@ -429,6 +501,101 @@ const styles = StyleSheet.create({
     marginRight: 4,
     borderRadius: 6,
     backgroundColor: "#252525",
+  },
+  quickCartCard: {
+    marginTop: 18,
+    borderRadius: 12,
+    padding: 16,
+    backgroundColor: "#ffffff",
+    boxShadow: "0 2px 10px rgba(37, 37, 37, 0.08)",
+  },
+  quickCartHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  quickCartTitle: {
+    color: "#212121",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  quickCartEmpty: {
+    alignItems: "center",
+    paddingVertical: 14,
+  },
+  quickCartEmptyText: {
+    marginTop: 8,
+    color: "#9a9c98",
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  quickCartButton: {
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 14,
+    paddingHorizontal: 20,
+    borderRadius: 8,
+    backgroundColor: "#2d5a4b",
+  },
+  quickCartButtonText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  quickCartThumbRow: {
+    gap: 10,
+    marginTop: 14,
+  },
+  quickCartThumbWrap: {
+    position: "relative",
+  },
+  quickCartThumb: {
+    width: 56,
+    height: 56,
+    borderRadius: 10,
+    backgroundColor: "#f0f1ee",
+  },
+  quickCartThumbImage: {
+    borderRadius: 10,
+  },
+  quickCartThumbPlaceholder: {
+    width: 56,
+    height: 56,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 10,
+    backgroundColor: "#fff0f2",
+  },
+  quickCartThumbBadge: {
+    position: "absolute",
+    right: -4,
+    bottom: -4,
+    minWidth: 20,
+    height: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: "#ffffff",
+    borderRadius: 10,
+    paddingHorizontal: 4,
+    backgroundColor: "#d9475c",
+  },
+  quickCartThumbBadgeText: {
+    color: "#ffffff",
+    fontSize: 9,
+    fontWeight: "900",
+  },
+  quickCartSummaryRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 16,
+  },
+  quickCartTotalText: {
+    color: "#212121",
+    fontSize: 14,
+    fontWeight: "800",
   },
   banner: {
     height: 180,

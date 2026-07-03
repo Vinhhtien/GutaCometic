@@ -3,6 +3,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Dimensions,
   FlatList,
   Image,
@@ -30,6 +31,7 @@ import { Review } from "@/types/review";
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const IMAGE_HEIGHT = SCREEN_WIDTH * 1.05;
 const REVIEW_PREVIEW_COUNT = 2;
+const MAX_QUANTITY = 50;
 
 const ICON_COLORS: Record<string, string> = {
   "water-outline": "#2f80ed",
@@ -227,8 +229,13 @@ export default function ProductDetailScreen() {
   };
 
   const handleIncreaseQuantity = () => {
+    if (quantity >= MAX_QUANTITY) {
+      Alert.alert("Thông báo", "Số lượng mua tối đa cho mỗi sản phẩm là 50");
+      return;
+    }
+
     setQuantity((prev) => {
-      const next = prev + 1;
+      const next = Math.min(MAX_QUANTITY, prev + 1);
       setQuantityText(String(next));
       return next;
     });
@@ -236,6 +243,14 @@ export default function ProductDetailScreen() {
 
   const handleQuantityChangeText = (text: string) => {
     const digitsOnly = text.replace(/[^0-9]/g, "");
+
+    if (digitsOnly !== "" && parseInt(digitsOnly, 10) > MAX_QUANTITY) {
+      Alert.alert("Thông báo", "Số lượng mua tối đa cho mỗi sản phẩm là 50");
+      setQuantityText(String(MAX_QUANTITY));
+      setQuantity(MAX_QUANTITY);
+      return;
+    }
+
     setQuantityText(digitsOnly);
 
     const parsed = parseInt(digitsOnly, 10);
@@ -253,11 +268,42 @@ export default function ProductDetailScreen() {
       return;
     }
 
-    setQuantityText(String(parsed));
+    const clamped = Math.min(MAX_QUANTITY, parsed);
+    setQuantity(clamped);
+    setQuantityText(String(clamped));
+  };
+
+  const getValidatedQuantity = (): number | null => {
+    const parsedQty = parseInt(quantityText, 10);
+
+    if (Number.isNaN(parsedQty) || parsedQty <= 0) {
+      Alert.alert("Thông báo", "Vui lòng chọn số lượng sản phẩm tối thiểu là 1.");
+      setQuantity(1);
+      setQuantityText("1");
+      return null;
+    }
+
+    if (parsedQty > MAX_QUANTITY) {
+      Alert.alert("Thông báo", "Số lượng mua tối đa cho mỗi sản phẩm là 50.");
+      setQuantity(MAX_QUANTITY);
+      setQuantityText(String(MAX_QUANTITY));
+      return null;
+    }
+
+    if (parsedQty !== quantity) {
+      setQuantity(parsedQty);
+    }
+
+    return parsedQty;
   };
 
   const handleAddToCart = () => {
-    addItem({ product, quantity });
+    const validQuantity = getValidatedQuantity();
+    if (validQuantity === null) {
+      return;
+    }
+
+    addItem({ product, quantity: validQuantity });
     setJustAdded(true);
 
     if (addedFeedbackTimeout.current) {
@@ -270,9 +316,18 @@ export default function ProductDetailScreen() {
   };
 
   const handleBuyNow = () => {
-    addItem({ product, quantity });
+    const validQuantity = getValidatedQuantity();
+    if (validQuantity === null) {
+      return;
+    }
+
+    addItem({ product, quantity: validQuantity });
     router.push("/customer/checkout");
   };
+
+  const isQuantityInvalid =
+    quantityText === "" || Number.isNaN(parseInt(quantityText, 10)) ||
+    parseInt(quantityText, 10) <= 0;
 
   return (
     <KeyboardAvoidingView
@@ -506,7 +561,14 @@ export default function ProductDetailScreen() {
         </View>
 
         <View style={styles.actionButtonsRow}>
-          <Pressable onPress={handleAddToCart} style={styles.addToCartButton}>
+          <Pressable
+            disabled={isQuantityInvalid}
+            onPress={handleAddToCart}
+            style={[
+              styles.addToCartButton,
+              isQuantityInvalid && styles.actionButtonDisabled,
+            ]}
+          >
             <Ionicons
               color="#252525"
               name={justAdded ? "checkmark" : "bag-add-outline"}
@@ -516,7 +578,14 @@ export default function ProductDetailScreen() {
               {justAdded ? "Đã thêm" : "Thêm vào giỏ"}
             </Text>
           </Pressable>
-          <Pressable onPress={handleBuyNow} style={styles.buyNowButton}>
+          <Pressable
+            disabled={isQuantityInvalid}
+            onPress={handleBuyNow}
+            style={[
+              styles.buyNowButton,
+              isQuantityInvalid && styles.actionButtonDisabled,
+            ]}
+          >
             <Text style={styles.buyNowButtonText}>Mua ngay</Text>
           </Pressable>
         </View>
@@ -879,6 +948,9 @@ const styles = StyleSheet.create({
   actionButtonsRow: {
     flexDirection: "row",
     gap: 10,
+  },
+  actionButtonDisabled: {
+    opacity: 0.5,
   },
   addToCartButton: {
     flex: 4,

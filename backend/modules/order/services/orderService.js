@@ -2,6 +2,7 @@ const crypto = require("crypto");
 const mongoose = require("mongoose");
 const Order = require("../../../models/Order");
 const Product = require("../../../models/Product");
+const Review = require("../../../models/Review");
 const AppError = require("../../../utils/AppError");
 const inventoryService = require("../../stock/services/inventoryService");
 const { runInTransaction } = require("../../stock/services/transactionService");
@@ -101,6 +102,11 @@ const findOrderOrThrow = async (orderId, session) => {
   return order;
 };
 
+const ONLINE_ORDER_PAYMENT_METHODS = [
+  PAYMENT_METHODS.COD,
+  PAYMENT_METHODS.BANK_TRANSFER,
+];
+
 const createOnlineOrder = async (payload, customer) => {
   assertRole(customer, [USER_ROLES.CUSTOMER]);
 
@@ -134,7 +140,18 @@ const createOnlineOrder = async (payload, customer) => {
     );
   }
 
+  const paymentMethod = payload.paymentMethod || PAYMENT_METHODS.COD;
+
+  if (!ONLINE_ORDER_PAYMENT_METHODS.includes(paymentMethod)) {
+    throw new AppError(
+      "Payment method must be COD or bank transfer",
+      400,
+      "INVALID_PAYMENT_METHOD"
+    );
+  }
+
   const shippingFee = isDelivery ? DELIVERY_FEE_VND : 0;
+  const isBankTransfer = paymentMethod === PAYMENT_METHODS.BANK_TRANSFER;
 
   return runInTransaction(async (session) => {
     const items = await buildOrderItems(payload.items, session);
@@ -154,15 +171,19 @@ const createOnlineOrder = async (payload, customer) => {
       shippingFee,
       totalPrice: 0,
       status: ORDER_STATUSES.PENDING,
-      paymentStatus: PAYMENT_STATUSES.PAID,
-      paymentMethod: PAYMENT_METHODS.ONLINE_PAYMENT,
-      paidAt: new Date(),
+      paymentStatus: isBankTransfer
+        ? PAYMENT_STATUSES.PAID
+        : PAYMENT_STATUSES.UNPAID,
+      paymentMethod,
+      paidAt: isBankTransfer ? new Date() : null,
       inventoryReserved: true,
       statusHistory: [
         {
           status: ORDER_STATUSES.PENDING,
           changedBy: customer._id,
-          note: "Online order created and paid online",
+          note: isBankTransfer
+            ? "Online order created, payment confirmed via bank transfer"
+            : "Online order created, to be paid on delivery (COD)",
         },
       ],
     });
@@ -421,6 +442,47 @@ const cancelOrder = (orderId, actor, reason = "") =>
     return order;
   });
 
+const NEEDS_REVIEW_FILTER = "NEEDS_REVIEW";
+
+const getOrdersNeedingReview = async (query, user) => {
+  const completedOrders = await Order.find({
+    ...query,
+    status: ORDER_STATUSES.COMPLETED,
+  })
+    .populate("storeId", "name address phone")
+    .sort({ createdAt: -1 })
+    .lean();
+
+  if (completedOrders.length === 0) {
+    return completedOrders;
+  }
+
+  const productIds = [
+    ...new Set(
+      completedOrders.flatMap((order) =>
+        order.items.map((item) => String(item.productId))
+      )
+    ),
+  ];
+
+  const reviewedProductIds = new Set(
+    (
+      await Review.find({
+        customerId: user._id,
+        productId: { $in: productIds },
+      })
+        .select("productId")
+        .lean()
+    ).map((review) => String(review.productId))
+  );
+
+  return completedOrders.filter((order) =>
+    order.items.some(
+      (item) => !reviewedProductIds.has(String(item.productId))
+    )
+  );
+};
+
 const getOrdersForUser = async (user, filters = {}) => {
   const query = {};
 
@@ -437,12 +499,20 @@ const getOrdersForUser = async (user, filters = {}) => {
     query.storeId = user.storeId;
   }
 
-  if (filters.status) {
-    query.status = filters.status;
-  }
-
   if (filters.channel) {
     query.channel = filters.channel;
+  }
+
+  if (filters.status === NEEDS_REVIEW_FILTER) {
+    return getOrdersNeedingReview(query, user);
+  }
+
+  if (filters.status) {
+    const statusList = String(filters.status)
+      .split(",")
+      .map((status) => status.trim())
+      .filter(Boolean);
+    query.status = statusList.length > 1 ? { $in: statusList } : statusList[0];
   }
 
   return Order.find(query)

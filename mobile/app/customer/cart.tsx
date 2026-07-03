@@ -15,11 +15,20 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useCart } from "@/contexts/CartContext";
 import { CartItem } from "@/types/cart";
 
+const MAX_QUANTITY = 50;
+
 const formatPrice = (price: number) =>
   `${new Intl.NumberFormat("vi-VN").format(price)}đ`;
 
 export default function CartScreen() {
   const { items, removeItem, setQuantity, subtotal } = useCart();
+
+  const hasInvalidQuantity = items.some(
+    (item) =>
+      !Number.isInteger(item.quantity) ||
+      item.quantity < 1 ||
+      item.quantity > MAX_QUANTITY
+  );
 
   const requestRemoveItem = (productId: string, onCancel?: () => void) => {
     Alert.alert(
@@ -92,8 +101,21 @@ export default function CartScreen() {
               <Text style={styles.subtotalValue}>{formatPrice(subtotal)}</Text>
             </View>
             <Pressable
-              onPress={() => router.push("/customer/checkout")}
-              style={styles.checkoutButton}
+              disabled={hasInvalidQuantity}
+              onPress={() => {
+                if (hasInvalidQuantity) {
+                  Alert.alert(
+                    "Thông báo",
+                    "Số lượng mua tối đa cho mỗi sản phẩm là 50. Vui lòng kiểm tra lại giỏ hàng."
+                  );
+                  return;
+                }
+                router.push("/customer/checkout");
+              }}
+              style={[
+                styles.checkoutButton,
+                hasInvalidQuantity && styles.checkoutButtonDisabled,
+              ]}
             >
               <Text style={styles.checkoutButtonText}>Tiến hành thanh toán</Text>
             </Pressable>
@@ -143,19 +165,32 @@ function CartLineItem({
   };
 
   const handleIncrease = () => {
+    if (item.quantity >= MAX_QUANTITY) {
+      Alert.alert("Thông báo", "Số lượng mua tối đa cho mỗi sản phẩm là 50");
+      return;
+    }
+
     onQuantityChange(item.quantity + 1);
   };
 
   const handleChangeText = (text: string) => {
     const digitsOnly = text.replace(/[^0-9]/g, "");
-    setQuantityText(digitsOnly);
-
     const parsed = parseInt(digitsOnly, 10);
 
     if (digitsOnly === "" || parsed === 0) {
+      setQuantityText(digitsOnly);
       confirmRemove();
       return;
     }
+
+    if (!Number.isNaN(parsed) && parsed > MAX_QUANTITY) {
+      Alert.alert("Thông báo", "Số lượng mua tối đa cho mỗi sản phẩm là 50");
+      setQuantityText(String(MAX_QUANTITY));
+      onQuantityChange(MAX_QUANTITY);
+      return;
+    }
+
+    setQuantityText(digitsOnly);
 
     if (!Number.isNaN(parsed)) {
       onQuantityChange(parsed);
@@ -170,6 +205,15 @@ function CartLineItem({
 
       if (item.quantity !== 1) {
         onQuantityChange(1);
+      }
+      return;
+    }
+
+    if (parsed > MAX_QUANTITY) {
+      setQuantityText(String(MAX_QUANTITY));
+
+      if (item.quantity !== MAX_QUANTITY) {
+        onQuantityChange(MAX_QUANTITY);
       }
     }
   };
@@ -415,6 +459,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderRadius: 12,
     backgroundColor: "#252525",
+  },
+  checkoutButtonDisabled: {
+    backgroundColor: "#b7b8b5",
   },
   checkoutButtonText: {
     color: "#ffffff",

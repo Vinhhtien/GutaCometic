@@ -38,11 +38,13 @@ export type Order = {
   createdAt: string;
 };
 
+export type PaymentMethod = "COD" | "BANK_TRANSFER";
+
 export type CreateOnlineOrderPayload = {
   storeId: string;
   fulfillmentType: "DELIVERY" | "STORE_PICKUP";
   items: { productId: string; quantity: number }[];
   shippingAddress?: ShippingAddress | null;
   shippingFee?: number;
-  paymentMethod?: string;
+  paymentMethod?: PaymentMethod;
 };

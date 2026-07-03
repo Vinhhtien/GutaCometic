@@ -94,6 +94,14 @@ export default function OrderDetailScreen() {
   const isDelivery = order?.fulfillmentType === "DELIVERY";
   const store =
     order && typeof order.storeId === "object" ? order.storeId : null;
+  const isPaid = order?.paymentStatus === "PAID";
+  const paymentStatusText = order
+    ? isPaid
+      ? "Đã thanh toán"
+      : order.paymentMethod === "COD"
+        ? "Chưa thanh toán (Thanh toán COD khi nhận hàng)"
+        : (PAYMENT_STATUS_LABELS[order.paymentStatus] ?? order.paymentStatus)
+    : "";
 
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
@@ -229,9 +237,13 @@ export default function OrderDetailScreen() {
               </Text>
             </View>
             <View style={styles.divider} />
-            <Text style={styles.infoLine}>
-              {PAYMENT_STATUS_LABELS[order.paymentStatus] ??
-                order.paymentStatus}
+            <Text
+              style={[
+                styles.infoLine,
+                isPaid ? styles.paymentStatusPaid : styles.paymentStatusUnpaid,
+              ]}
+            >
+              {paymentStatusText}
             </Text>
           </View>
         </ScrollView>
@@ -355,6 +367,12 @@ const styles = StyleSheet.create({
     color: "#3d3e3c",
     fontSize: 13,
     fontWeight: "700",
+  },
+  paymentStatusPaid: {
+    color: "#1f9254",
+  },
+  paymentStatusUnpaid: {
+    color: "#c2660a",
   },
   infoLineMuted: {
     marginTop: 4,

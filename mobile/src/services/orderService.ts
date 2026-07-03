@@ -14,8 +14,9 @@ export const createOnlineOrder = async (
   return response.order;
 };
 
-export const getOrders = async (token: string) => {
-  const response = await apiRequest<{ orders: Order[] }>("/orders", {
+export const getOrders = async (token: string, status?: string) => {
+  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+  const response = await apiRequest<{ orders: Order[] }>(`/orders${query}`, {
     token,
   });
 
@@ -26,6 +27,23 @@ export const getOrderById = async (token: string, orderId: string) => {
   const response = await apiRequest<{ order: Order }>(`/orders/${orderId}`, {
     token,
   });
+
+  return response.order;
+};
+
+export const cancelOrder = async (
+  token: string,
+  orderId: string,
+  reason?: string
+) => {
+  const response = await apiRequest<{ order: Order }>(
+    `/orders/${orderId}/cancel`,
+    {
+      token,
+      method: "PATCH",
+      body: reason ? { reason } : undefined,
+    }
+  );
 
   return response.order;
 };
