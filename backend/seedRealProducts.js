@@ -1058,6 +1058,70 @@ const products = [
     ],
     isActive: true,
   },
+  {
+    sku: "COTTON-GUTA-010K",
+    name: "Bông Tẩy Trang GUTA Cotton Mềm Mịn 80 Miếng",
+    brand: "GUTA Cosmetic",
+    description:
+      "Bông tẩy trang cotton mềm, mỏng nhẹ, phù hợp dùng cùng toner hoặc nước tẩy trang hằng ngày.",
+    image:
+      "https://images.unsplash.com/photo-1596462502278-27bfdc403348?auto=format&fit=crop&w=800&q=80",
+    images: [
+      "https://images.unsplash.com/photo-1596462502278-27bfdc403348?auto=format&fit=crop&w=800&q=80",
+    ],
+    price: 10000,
+    originalPrice: null,
+    category: "Phụ Kiện Chăm Sóc Da",
+    skinTypes: ["Mọi loại da"],
+    volume: "80 miếng",
+    origin: "Việt Nam",
+    expiryDate: "60 tháng kể từ ngày sản xuất",
+    ingredients: [
+      {
+        icon: "leaf-outline",
+        title: "Sợi cotton mềm mại",
+        subtitle: "Bề mặt êm, hạn chế xơ bông khi lau trên da.",
+      },
+      {
+        icon: "water-outline",
+        title: "Thấm hút vừa đủ",
+        subtitle: "Phù hợp dùng với toner, lotion hoặc nước tẩy trang.",
+      },
+    ],
+    isActive: true,
+  },
+  {
+    sku: "COTTON-GUTA-015K",
+    name: "Bông Tẩy Trang GUTA Premium Cotton 120 Miếng",
+    brand: "GUTA Cosmetic",
+    description:
+      "Bông tẩy trang cotton dày dặn hơn, thấm tốt, dùng cho làm sạch da mặt và đắp lotion mask.",
+    image:
+      "https://images.unsplash.com/photo-1596462502278-27bfdc403348?auto=format&fit=crop&w=800&q=80",
+    images: [
+      "https://images.unsplash.com/photo-1596462502278-27bfdc403348?auto=format&fit=crop&w=800&q=80",
+    ],
+    price: 15000,
+    originalPrice: null,
+    category: "Phụ Kiện Chăm Sóc Da",
+    skinTypes: ["Mọi loại da", "Da nhạy cảm"],
+    volume: "120 miếng",
+    origin: "Việt Nam",
+    expiryDate: "60 tháng kể từ ngày sản xuất",
+    ingredients: [
+      {
+        icon: "shield-checkmark-outline",
+        title: "Cotton dày dặn",
+        subtitle: "Giữ form tốt, không dễ rách khi lau hoặc đắp lotion.",
+      },
+      {
+        icon: "sparkles-outline",
+        title: "Dịu nhẹ cho da",
+        subtitle: "Phù hợp sử dụng hằng ngày cho nhiều loại da.",
+      },
+    ],
+    isActive: true,
+  },
 ];
 
 const seed = async () => {

@@ -3,7 +3,9 @@ import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Image,
+  Modal,
   Pressable,
   ScrollView,
   StyleSheet,
@@ -13,8 +15,17 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/contexts/AuthContext";
 import { getErrorMessage } from "@/services/api";
-import { getOrderById } from "@/services/orderService";
-import { Order } from "@/types/order";
+import {
+  getOrderById,
+  getPayosPaymentLink,
+  syncPayosPaymentStatus,
+} from "@/services/orderService";
+import { Order, PaymentLink } from "@/types/order";
+
+type PayosQrState = {
+  order: Order;
+  payment: PaymentLink;
+};
 
 const formatPrice = (price: number) =>
   `${new Intl.NumberFormat("vi-VN").format(price)}đ`;
@@ -69,6 +80,9 @@ export default function OrderDetailScreen() {
   const [order, setOrder] = useState<Order | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState("");
+  const [payosQr, setPayosQr] = useState<PayosQrState | null>(null);
+  const [isOpeningPayment, setIsOpeningPayment] = useState(false);
+  const [isCheckingPayment, setIsCheckingPayment] = useState(false);
 
   const loadOrder = useCallback(async () => {
     if (!token || !id) {
@@ -95,6 +109,8 @@ export default function OrderDetailScreen() {
   const store =
     order && typeof order.storeId === "object" ? order.storeId : null;
   const isPaid = order?.paymentStatus === "PAID";
+  const canPayBankTransfer =
+    order?.paymentMethod === "BANK_TRANSFER" && order.paymentStatus !== "PAID";
   const paymentStatusText = order
     ? isPaid
       ? "Đã thanh toán"
@@ -102,6 +118,65 @@ export default function OrderDetailScreen() {
         ? "Chưa thanh toán (Thanh toán COD khi nhận hàng)"
         : (PAYMENT_STATUS_LABELS[order.paymentStatus] ?? order.paymentStatus)
     : "";
+
+  const handleOpenPayosQr = async () => {
+    if (!token || !order || isOpeningPayment) {
+      return;
+    }
+
+    try {
+      setIsOpeningPayment(true);
+      const payment = await getPayosPaymentLink(token, order._id);
+
+      // console.log("[PayOS][Mobile] reopen payment link", {
+      //   orderId: order._id,
+      //   hasQrImage: Boolean(payment?.qrImage),
+      //   qrImageLength: payment?.qrImage?.length || 0,
+      //   hasQrCode: Boolean(payment?.qrCode),
+      //   expiredAt: payment?.expiredAt,
+      // });
+
+      if (payment?.checkoutUrl) {
+        setPayosQr({ order, payment });
+      }
+    } catch (requestError) {
+      Alert.alert("Mo thanh toan that bai", getErrorMessage(requestError));
+    } finally {
+      setIsOpeningPayment(false);
+    }
+  };
+
+  const handleCheckPayosPayment = async () => {
+    if (!token || !payosQr || isCheckingPayment) {
+      return;
+    }
+
+    try {
+      setIsCheckingPayment(true);
+      const result = await syncPayosPaymentStatus(token, payosQr.order._id);
+      // console.log("[PayOS][Mobile] order detail sync result", {
+      //   orderId: payosQr.order._id,
+      //   payosStatus: result.payosStatus,
+      //   paymentStatus: result.order.paymentStatus,
+      // });
+
+      setOrder(result.order);
+
+      if (result.order.paymentStatus === "PAID") {
+        setPayosQr(null);
+        return;
+      }
+
+      Alert.alert(
+        "Chua nhan duoc thanh toan",
+        `He thong chua ghi nhan giao dich. Trang thai PayOS: ${result.payosStatus}.`
+      );
+    } catch (requestError) {
+      Alert.alert("Kiem tra thanh toan that bai", getErrorMessage(requestError));
+    } finally {
+      setIsCheckingPayment(false);
+    }
+  };
 
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
@@ -245,9 +320,74 @@ export default function OrderDetailScreen() {
             >
               {paymentStatusText}
             </Text>
+            {canPayBankTransfer ? (
+              <Pressable
+                disabled={isOpeningPayment}
+                onPress={handleOpenPayosQr}
+                style={styles.payButton}
+              >
+                {isOpeningPayment ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text style={styles.payButtonText}>
+                    Thanh toan chuyen khoan
+                  </Text>
+                )}
+              </Pressable>
+            ) : null}
           </View>
         </ScrollView>
       )}
+      <Modal
+        animationType="slide"
+        onRequestClose={() => setPayosQr(null)}
+        transparent
+        visible={Boolean(payosQr)}
+      >
+        <View style={styles.qrModalOverlay}>
+          <View style={styles.qrModal}>
+            <Pressable
+              accessibilityLabel="Dong thanh toan"
+              onPress={() => setPayosQr(null)}
+              style={styles.qrCloseButton}
+            >
+              <Ionicons color="#252525" name="close" size={20} />
+            </Pressable>
+
+            <Text style={styles.qrTitle}>Chuyen khoan ngan hang</Text>
+            <Text style={styles.qrSubtitle}>
+              Quet ma QR bang ung dung ngan hang de thanh toan.
+            </Text>
+
+            <View style={styles.qrBox}>
+              {payosQr?.payment.qrImage ? (
+                <Image
+                  resizeMode="contain"
+                  source={{ uri: payosQr.payment.qrImage }}
+                  style={styles.qrImage}
+                />
+              ) : (
+                <ActivityIndicator color="#252525" />
+              )}
+            </View>
+
+            <Pressable
+              disabled={isCheckingPayment}
+              onPress={handleCheckPayosPayment}
+              style={[
+                styles.payButton,
+                isCheckingPayment && styles.payButtonDisabled,
+              ]}
+            >
+              {isCheckingPayment ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <Text style={styles.payButtonText}>Toi da thanh toan</Text>
+              )}
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -422,5 +562,72 @@ const styles = StyleSheet.create({
     color: "#212121",
     fontSize: 17,
     fontWeight: "900",
+  },
+  payButton: {
+    height: 48,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 14,
+    borderRadius: 12,
+    backgroundColor: "#252525",
+  },
+  payButtonDisabled: {
+    opacity: 0.7,
+  },
+  payButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  qrModalOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
+  },
+  qrModal: {
+    paddingHorizontal: 22,
+    paddingTop: 18,
+    paddingBottom: 28,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    backgroundColor: "#ffffff",
+  },
+  qrCloseButton: {
+    position: "absolute",
+    top: 14,
+    right: 14,
+    zIndex: 1,
+    width: 34,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 17,
+    backgroundColor: "#f0f1ee",
+  },
+  qrTitle: {
+    paddingRight: 44,
+    color: "#212121",
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  qrSubtitle: {
+    marginTop: 6,
+    paddingRight: 28,
+    color: "#747673",
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  qrBox: {
+    alignSelf: "center",
+    marginTop: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#eef0ec",
+    borderRadius: 18,
+    backgroundColor: "#ffffff",
+  },
+  qrImage: {
+    width: 220,
+    height: 220,
   },
 });

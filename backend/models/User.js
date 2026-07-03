@@ -86,6 +86,15 @@ const userSchema = new mongoose.Schema(
       type: Boolean,
       default: true,
     },
+    disabledAt: {
+      type: Date,
+      default: null,
+    },
+    disabledReason: {
+      type: String,
+      trim: true,
+      default: "",
+    },
     wishlist: {
       type: [{ type: mongoose.Schema.Types.ObjectId, ref: "Product" }],
       default: [],

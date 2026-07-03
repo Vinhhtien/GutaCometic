@@ -14,6 +14,7 @@
     "db:sync-user-indexes": "node scripts/syncUserIndexes.js"
   },
   "dependencies": {
+    "@payos/node": "^2.0.5",
     "bcryptjs": "^3.0.2",
     "cors": "^2.8.5",
     "dotenv": "^16.6.1",
@@ -21,7 +22,8 @@
     "google-auth-library": "^10.7.0",
     "jsonwebtoken": "^9.0.2",
     "mongoose": "^8.16.1",
-    "nodemailer": "^9.0.1"
+    "nodemailer": "^9.0.1",
+    "qrcode": "^1.5.4"
   },
   "devDependencies": {
     "nodemon": "^3.1.10"

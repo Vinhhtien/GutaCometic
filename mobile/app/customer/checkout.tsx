@@ -6,6 +6,7 @@ import {
   Alert,
   Image,
   KeyboardAvoidingView,
+  Modal,
   Platform,
   Pressable,
   ScrollView,
@@ -18,9 +19,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/contexts/AuthContext";
 import { useCart } from "@/contexts/CartContext";
 import { getErrorMessage } from "@/services/api";
-import { createOnlineOrder } from "@/services/orderService";
+import {
+  createOnlineOrder,
+  syncPayosPaymentStatus,
+} from "@/services/orderService";
 import { getStores } from "@/services/storeService";
-import { PaymentMethod } from "@/types/order";
+import { Order, PaymentLink, PaymentMethod } from "@/types/order";
 import { Store } from "@/types/store";
 
 const DELIVERY_FEE = 25000;
@@ -30,6 +34,11 @@ const formatPrice = (price: number) =>
 
 type FulfillmentType = "DELIVERY" | "STORE_PICKUP";
 type CheckoutStep = 1 | 2;
+
+type PayosQrState = {
+  order: Order;
+  payment: PaymentLink;
+};
 
 const PAYMENT_METHOD_OPTIONS: {
   value: PaymentMethod;
@@ -59,6 +68,11 @@ export default function CheckoutScreen() {
   const [addressLine, setAddressLine] = useState(user?.address ?? "");
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("COD");
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [payosQr, setPayosQr] = useState<PayosQrState | null>(null);
+  const [pendingPayosOrder, setPendingPayosOrder] =
+    useState<PayosQrState | null>(null);
+  const [remainingSeconds, setRemainingSeconds] = useState(0);
+  const [isCheckingPayment, setIsCheckingPayment] = useState(false);
 
   const isDelivery = fulfillmentType === "DELIVERY";
   const shippingFee = isDelivery ? DELIVERY_FEE : 0;
@@ -89,6 +103,33 @@ export default function CheckoutScreen() {
   useEffect(() => {
     loadStores();
   }, [loadStores]);
+
+  useEffect(() => {
+    if (!payosQr?.payment.expiredAt) {
+      setRemainingSeconds(0);
+      return;
+    }
+
+    const expiresAt = new Date(payosQr.payment.expiredAt).getTime();
+
+    const updateRemaining = () => {
+      setRemainingSeconds(
+        Math.max(0, Math.floor((expiresAt - Date.now()) / 1000))
+      );
+    };
+
+    updateRemaining();
+    const timer = setInterval(updateRemaining, 1000);
+
+    return () => clearInterval(timer);
+  }, [payosQr]);
+
+  const formattedRemainingTime = useMemo(() => {
+    const minutes = Math.floor(remainingSeconds / 60);
+    const seconds = remainingSeconds % 60;
+
+    return `${minutes}:${seconds.toString().padStart(2, "0")}`;
+  }, [remainingSeconds]);
 
   const handleDecreaseQuantity = (item: (typeof items)[number]) => {
     if (item.quantity <= 1) {
@@ -141,13 +182,16 @@ export default function CheckoutScreen() {
       return;
     }
 
-    const effectivePaymentMethod: PaymentMethod = isDelivery
-      ? paymentMethod
-      : "COD";
+    if (pendingPayosOrder) {
+      setPayosQr(pendingPayosOrder);
+      return;
+    }
+
+    const effectivePaymentMethod: PaymentMethod = paymentMethod;
 
     try {
       setIsSubmitting(true);
-      const order = await createOnlineOrder(token, {
+      const { order, payment } = await createOnlineOrder(token, {
         storeId: selectedStoreId,
         fulfillmentType,
         items: items.map((item) => ({
@@ -164,6 +208,20 @@ export default function CheckoutScreen() {
         shippingFee,
         paymentMethod: effectivePaymentMethod,
       });
+
+      if (payment?.checkoutUrl) {
+        // console.log("[PayOS][Mobile] payment link received", {
+        //   orderId: order._id,
+        //   hasQrImage: Boolean(payment.qrImage),
+        //   qrImageLength: payment.qrImage?.length || 0,
+        //   hasQrCode: Boolean(payment.qrCode),
+        //   expiredAt: payment.expiredAt,
+        // });
+        const nextPayosQr = { order, payment };
+        setPendingPayosOrder(nextPayosQr);
+        setPayosQr(nextPayosQr);
+        return;
+      }
 
       const successMessage =
         effectivePaymentMethod === "BANK_TRANSFER"
@@ -189,7 +247,44 @@ export default function CheckoutScreen() {
     }
   };
 
-  if (items.length === 0) {
+  const handleCheckPayosPayment = async () => {
+    if (!token || !payosQr || isCheckingPayment) {
+      return;
+    }
+
+    try {
+      setIsCheckingPayment(true);
+      const result = await syncPayosPaymentStatus(token, payosQr.order._id);
+      // console.log("[PayOS][Mobile] sync result", {
+      //   orderId: payosQr.order._id,
+      //   payosStatus: result.payosStatus,
+      //   paymentStatus: result.order.paymentStatus,
+      // });
+
+      if (result.order.paymentStatus === "PAID") {
+        const orderId = result.order._id;
+        await clearCart();
+        setPendingPayosOrder(null);
+        setPayosQr(null);
+        router.replace({
+          pathname: "/customer/order-detail",
+          params: { id: orderId },
+        });
+        return;
+      }
+
+      Alert.alert(
+        "Chưa nhận được thanh toán",
+        `Hệ thống chưa ghi nhận giao dịch. Trạng thái PayOS: ${result.payosStatus}. Vui lòng đợi một chút rồi thử lại.`
+      );
+    } catch (requestError) {
+      Alert.alert("Kiểm tra thanh toán thất bại", getErrorMessage(requestError));
+    } finally {
+      setIsCheckingPayment(false);
+    }
+  };
+
+  if (items.length === 0 && !payosQr && !pendingPayosOrder) {
     return (
       <SafeAreaView edges={["top"]} style={styles.safeArea}>
         <View style={styles.header}>
@@ -343,7 +438,7 @@ export default function CheckoutScreen() {
                 </Pressable>
               </View>
 
-              {isDelivery ? (
+              {(
                 <>
                   <Text style={styles.sectionLabel}>ĐỊA CHỈ NHẬN HÀNG</Text>
                   <View style={styles.card}>
@@ -377,7 +472,7 @@ export default function CheckoutScreen() {
                     </View>
                   </View>
                 </>
-              ) : null}
+              )}
 
               <Text style={styles.sectionLabel}>
                 {isDelivery ? "CỬA HÀNG GIAO HÀNG" : "HỆ THỐNG CỬA HÀNG GUTA"}
@@ -603,12 +698,107 @@ export default function CheckoutScreen() {
               <ActivityIndicator color="#ffffff" />
             ) : (
               <Text style={styles.submitButtonText}>
-                Tiến hành Đặt hàng · {formatPrice(totalPrice)}
+                {pendingPayosOrder
+                  ? `Mở lại mã QR thanh toán · ${formatPrice(
+                      pendingPayosOrder.order.totalPrice
+                    )}`
+                  : `Tiến hành đặt hàng · ${formatPrice(totalPrice)}`}
               </Text>
             )}
           </Pressable>
         )}
       </View>
+
+      <Modal
+        animationType="slide"
+        onRequestClose={() => setPayosQr(null)}
+        transparent
+        visible={Boolean(payosQr)}
+      >
+        <View style={styles.qrModalOverlay}>
+          <View style={styles.qrModal}>
+            <Pressable
+              accessibilityLabel="Đóng thanh toán"
+              onPress={() => setPayosQr(null)}
+              style={styles.qrCloseButton}
+            >
+              <Ionicons color="#252525" name="close" size={20} />
+            </Pressable>
+
+            <Text style={styles.qrTitle}>Chuyển khoản ngân hàng</Text>
+            <Text style={styles.qrSubtitle}>
+              Quét mã QR bằng ứng dụng ngân hàng để thanh toán.
+            </Text>
+
+            <View style={styles.qrBox}>
+              {payosQr?.payment.qrImage ? (
+                <Image
+                  resizeMode="contain"
+                  source={{ uri: payosQr.payment.qrImage }}
+                  style={styles.qrImage}
+                />
+              ) : (
+                <ActivityIndicator color="#252525" />
+              )}
+            </View>
+
+            <View style={styles.qrInfoBox}>
+              <View style={styles.qrInfoRow}>
+                <Text style={styles.qrInfoLabel}>Số tiền</Text>
+                <Text style={styles.qrInfoValue}>
+                  {formatPrice(payosQr?.order.totalPrice || 0)}
+                </Text>
+              </View>
+              <View style={styles.qrInfoRow}>
+                <Text style={styles.qrInfoLabel}>Mã đơn</Text>
+                <Text style={styles.qrInfoValue}>
+                  {payosQr?.order.orderCode}
+                </Text>
+              </View>
+              <View style={styles.qrInfoRow}>
+                <Text style={styles.qrInfoLabel}>Còn lại</Text>
+                <Text style={styles.qrInfoValue}>
+                  {formattedRemainingTime}
+                </Text>
+              </View>
+            </View>
+
+            <Pressable
+              disabled={isCheckingPayment}
+              onPress={handleCheckPayosPayment}
+              style={[
+                styles.qrDoneButton,
+                isCheckingPayment && styles.submitButtonDisabled,
+              ]}
+            >
+              {isCheckingPayment ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <Text style={styles.qrDoneButtonText}>Tôi đã thanh toán</Text>
+              )}
+            </Pressable>
+
+            <Pressable
+              onPress={async () => {
+                const orderId = payosQr?.order._id;
+                await clearCart();
+                setPendingPayosOrder(null);
+                setPayosQr(null);
+
+                if (orderId) {
+                  router.replace({
+                    pathname: "/customer/order-detail",
+                    params: { id: orderId },
+                  });
+                }
+              }}
+              style={styles.qrDoneButton}
+            >
+              <Text style={styles.qrDoneButtonText}>Xem đơn hàng</Text>
+            </Pressable>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -983,5 +1173,97 @@ const styles = StyleSheet.create({
     color: "#ffffff",
     fontSize: 15,
     fontWeight: "800",
+  },
+  qrModalOverlay: {
+    flex: 1,
+    justifyContent: "flex-end",
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
+  },
+  qrModal: {
+    paddingHorizontal: 22,
+    paddingTop: 18,
+    paddingBottom: 28,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    backgroundColor: "#ffffff",
+  },
+  qrCloseButton: {
+    position: "absolute",
+    top: 14,
+    right: 14,
+    zIndex: 1,
+    width: 34,
+    height: 34,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 17,
+    backgroundColor: "#f0f1ee",
+  },
+  qrTitle: {
+    paddingRight: 44,
+    color: "#212121",
+    fontSize: 18,
+    fontWeight: "900",
+  },
+  qrSubtitle: {
+    marginTop: 6,
+    paddingRight: 28,
+    color: "#747673",
+    fontSize: 13,
+    lineHeight: 19,
+  },
+  qrBox: {
+    alignSelf: "center",
+    marginTop: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "#eef0ec",
+    borderRadius: 18,
+    backgroundColor: "#ffffff",
+  },
+  qrImage: {
+    width: 220,
+    height: 220,
+  },
+  qrInfoBox: {
+    marginTop: 18,
+    borderRadius: 14,
+    backgroundColor: "#f7f8f5",
+    overflow: "hidden",
+  },
+  qrInfoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 16,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#eceee9",
+  },
+  qrInfoLabel: {
+    color: "#747673",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  qrInfoValue: {
+    flex: 1,
+    color: "#212121",
+    fontSize: 13,
+    fontWeight: "900",
+    textAlign: "right",
+  },
+  qrDoneButton: {
+    height: 50,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 18,
+    borderRadius: 12,
+    backgroundColor: "#252525",
+  },
+  qrDoneButtonText: {
+    color: "#ffffff",
+    fontSize: 14,
+    fontWeight: "900",
   },
 });
