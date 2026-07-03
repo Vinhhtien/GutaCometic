@@ -1,6 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, Pressable, StyleSheet, Text, View } from "react-native";
+import { useCart } from "@/contexts/CartContext";
 import { useWishlist } from "@/contexts/WishlistContext";
 import { Product } from "@/types/product";
 
@@ -12,8 +13,18 @@ const formatPrice = (price: number) =>
   `${new Intl.NumberFormat("vi-VN").format(price)} VND`;
 
 export function ProductCard({ product }: ProductCardProps) {
+  const { addItem } = useCart();
   const { isLiked, toggleLike } = useWishlist();
   const isFavorite = isLiked(product._id);
+
+  const handleQuickAddToCart = () => {
+    addItem({ product, quantity: 1 });
+    Alert.alert(
+      "Thêm vào giỏ hàng",
+      `Đã thêm 1 sản phẩm "${product.name}" vào giỏ hàng.`,
+      [{ text: "OK", style: "default" }]
+    );
+  };
 
   return (
     <Pressable
@@ -60,7 +71,11 @@ export function ProductCard({ product }: ProductCardProps) {
           <Text numberOfLines={1} style={styles.category}>
             {product.category}
           </Text>
-          <Pressable accessibilityLabel="Add product" style={styles.addButton}>
+          <Pressable
+            accessibilityLabel="Thêm vào giỏ hàng"
+            onPress={handleQuickAddToCart}
+            style={styles.addButton}
+          >
             <Ionicons color="#ffffff" name="add" size={19} />
           </Pressable>
         </View>
