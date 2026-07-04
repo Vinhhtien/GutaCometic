@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { memo, useCallback, useEffect, useRef, useState } from "react";
 import {
   ActivityIndicator,
@@ -20,7 +20,12 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/contexts/AuthContext";
 import { getErrorMessage } from "@/services/api";
 import { cancelOrder, getOrders } from "@/services/orderService";
+import {
+  deleteReview,
+  getReviewByOrder,
+} from "@/services/reviewService";
 import { Order } from "@/types/order";
+import { Review } from "@/types/review";
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -65,7 +70,9 @@ const STATUS_TABS: StatusTab[] = [
     apiStatus: "PREPARING,READY_FOR_PICKUP",
   },
   { key: "delivered", label: "Đã giao", apiStatus: "COMPLETED" },
-  { key: "review", label: "Đánh giá", apiStatus: "NEEDS_REVIEW" },
+  // Tab "Đánh giá" fetch TẤT CẢ đơn COMPLETED (cả đã và chưa đánh giá)
+  // để hiển thị ReviewPreview cho đơn đã đánh giá
+  { key: "review", label: "Đánh giá", apiStatus: "COMPLETED" },
   { key: "cancelled", label: "Đã hủy", apiStatus: "CANCELLED" },
 ];
 
@@ -114,24 +121,115 @@ const buildInitialOrdersData = (): OrdersDataState => ({
   cancelled: buildInitialTabState(),
 });
 
+// ─── ReviewPreview – hiển thị đánh giá đã có + nút Sửa / Xóa ─────────────────
+
+type ReviewPreviewProps = {
+  review: Review;
+  onEdit: () => void;
+  onDelete: () => void;
+};
+
+const ReviewPreview = memo(function ReviewPreview({
+  review,
+  onEdit,
+  onDelete,
+}: ReviewPreviewProps) {
+  return (
+    <View style={styles.reviewPreview}>
+      {/* Header: sao + 2 nút */}
+      <View style={styles.reviewPreviewHeader}>
+        <View style={styles.starsRow}>
+          {[1, 2, 3, 4, 5].map((s) => (
+            <Ionicons
+              key={s}
+              color={s <= review.rating ? "#f5a623" : "#e0e1dc"}
+              name={s <= review.rating ? "star" : "star-outline"}
+              size={14}
+            />
+          ))}
+        </View>
+        <View style={styles.reviewActions}>
+          <Pressable
+            hitSlop={8}
+            onPress={onEdit}
+            style={styles.reviewActionBtn}
+          >
+            <Ionicons color="#2d5a4b" name="pencil-outline" size={15} />
+          </Pressable>
+          <Pressable
+            hitSlop={8}
+            onPress={onDelete}
+            style={[styles.reviewActionBtn, styles.reviewActionBtnDanger]}
+          >
+            <Ionicons color="#c33e53" name="trash-outline" size={15} />
+          </Pressable>
+        </View>
+      </View>
+
+      {/* Comment */}
+      {!!review.comment && (
+        <Text numberOfLines={2} style={styles.reviewComment}>
+          {review.comment}
+        </Text>
+      )}
+
+      {/* Ảnh thumbnail */}
+      {review.images && review.images.length > 0 && (
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          style={styles.reviewImagesScroll}
+        >
+          <View style={styles.reviewImagesRow}>
+            {review.images.map((uri, i) => (
+              <Image
+                key={i}
+                source={{ uri }}
+                style={styles.reviewImageThumb}
+              />
+            ))}
+          </View>
+        </ScrollView>
+      )}
+    </View>
+  );
+});
+
 // ─── OrderCard (memoized to prevent unnecessary re-renders on swipe) ──────────
 
 type OrderCardProps = {
   order: Order;
   tabKey: StatusTabKey;
   isCancelling: boolean;
+  review: Review | null | undefined; // undefined = chưa tải, null = không có
   onPress: () => void;
   onActionPress: (event: any) => void;
+  onEditReview: (review: Review) => void;
+  onDeleteReview: (review: Review) => void;
 };
 
 const OrderCard = memo(function OrderCard({
   order,
   tabKey,
   isCancelling,
+  review,
   onPress,
   onActionPress,
+  onEditReview,
+  onDeleteReview,
 }: OrderCardProps) {
   const firstItem = order.items[0];
+
+  // Kiểm tra đủ điều kiện hiển thị nút "Đánh giá ngay"
+  const isCompleted =
+    order.status === "COMPLETED" ||
+    order.status === "completed" ||
+    order.status === "delivered";
+
+  // Chỉ hiện nút đánh giá khi ở tab review VÀ chưa đánh giá
+  const canReview = tabKey === "review" && isCompleted && order.isReviewed !== true;
+  // Hiện review preview khi ở tab review VÀ đã đánh giá (có review trong cache)
+  const hasReview = tabKey === "review" && order.isReviewed === true && !!review;
 
   return (
     <Pressable key={order._id} onPress={onPress} style={styles.orderCard}>
@@ -169,29 +267,50 @@ const OrderCard = memo(function OrderCard({
         </View>
       </View>
 
+      {/* ── Khu vực đánh giá đã có ─────────────────────────────────────────── */}
+      {hasReview && review && (
+        <ReviewPreview
+          review={review}
+          onDelete={() => onDeleteReview(review)}
+          onEdit={() => onEditReview(review)}
+        />
+      )}
+
       <View style={styles.orderCardBottom}>
         <Text style={styles.orderTotal}>{formatPrice(order.totalPrice)}</Text>
-        <Pressable
-          disabled={isCancelling}
-          onPress={onActionPress}
-          style={[
-            styles.actionButton,
-            tabKey === "pending" && styles.actionButtonDanger,
-          ]}
-        >
-          {isCancelling ? (
-            <ActivityIndicator color="#252525" size="small" />
-          ) : (
-            <Text
+
+        {/* ── Nút "Đánh giá ngay" ─────────────────────────────────────────── */}
+        {canReview ? (
+          <Pressable onPress={onActionPress} style={styles.reviewButton}>
+            <Ionicons color="#2d5a4b" name="star-outline" size={14} />
+            <Text style={styles.reviewButtonText}>Đánh giá ngay</Text>
+          </Pressable>
+        ) : (
+          /* ── Nút hành động thông thường ──────────────────────────────────── */
+          tabKey !== "review" && (
+            <Pressable
+              disabled={isCancelling}
+              onPress={onActionPress}
               style={[
-                styles.actionButtonText,
-                tabKey === "pending" && styles.actionButtonTextDanger,
+                styles.actionButton,
+                tabKey === "pending" && styles.actionButtonDanger,
               ]}
             >
-              {getActionLabel(tabKey)}
-            </Text>
-          )}
-        </Pressable>
+              {isCancelling ? (
+                <ActivityIndicator color="#252525" size="small" />
+              ) : (
+                <Text
+                  style={[
+                    styles.actionButtonText,
+                    tabKey === "pending" && styles.actionButtonTextDanger,
+                  ]}
+                >
+                  {getActionLabel(tabKey)}
+                </Text>
+              )}
+            </Pressable>
+          )
+        )}
       </View>
     </Pressable>
   );
@@ -204,9 +323,12 @@ type TabPageProps = {
   tabData: TabData;
   windowWidth: number;
   cancellingOrderId: string | null;
+  reviewsMap: Record<string, Review | null>;
   onRefresh: () => void;
   onOrderPress: (order: Order) => void;
   onActionPress: (order: Order) => void;
+  onEditReview: (order: Order, review: Review) => void;
+  onDeleteReview: (order: Order, review: Review) => void;
 };
 
 const TabPage = memo(function TabPage({
@@ -214,9 +336,12 @@ const TabPage = memo(function TabPage({
   tabData,
   windowWidth,
   cancellingOrderId,
+  reviewsMap,
   onRefresh,
   onOrderPress,
   onActionPress,
+  onEditReview,
+  onDeleteReview,
 }: TabPageProps) {
   const { orders, isLoading, isRefreshing, error } = tabData;
 
@@ -261,11 +386,14 @@ const TabPage = memo(function TabPage({
               key={order._id}
               isCancelling={cancellingOrderId === order._id}
               order={order}
+              review={reviewsMap[order._id]}
               tabKey={tab.key}
               onActionPress={(e) => {
                 e.stopPropagation();
                 onActionPress(order);
               }}
+              onDeleteReview={(review) => onDeleteReview(order, review)}
+              onEditReview={(review) => onEditReview(order, review)}
               onPress={() => onOrderPress(order)}
             />
           ))}
@@ -281,24 +409,56 @@ export default function OrdersScreen() {
   const { token } = useAuth();
   const { width: windowWidth } = useWindowDimensions();
 
-  // Active tab index (source of truth for both tab bar and pager)
   const [activeIndex, setActiveIndex] = useState(0);
-
-  // Per-tab data cache (orders + loading states)
   const [ordersData, setOrdersData] = useState<OrdersDataState>(
     buildInitialOrdersData
   );
-
-  // Tracks which tab INDEXES have been fetched at least once for lazy loading
-  // Using state (not ref) so renderItem can react to it and show skeletons correctly
   const [loadedTabs, setLoadedTabs] = useState<number[]>([]);
+  const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(null);
 
-  const [cancellingOrderId, setCancellingOrderId] = useState<string | null>(
-    null
-  );
+  // Cache đánh giá theo orderId (undefined = chưa tải, null = không có đánh giá)
+  const [reviewsMap, setReviewsMap] = useState<Record<string, Review | null>>({});
 
   const flatListRef = useRef<FlatList>(null);
   const tabScrollRef = useRef<ScrollView>(null);
+
+  // ── Tải đánh giá cho các đơn đã reviewed ──────────────────────────────────
+  // Dùng ref để tránh stale closure khi check cache
+  const reviewsMapRef = useRef<Record<string, Review | null>>({});
+
+  const loadReviewsForOrders = useCallback(
+    async (orders: Order[]) => {
+      if (!token) return;
+      const reviewedOrders = orders.filter((o) => o.isReviewed === true);
+      if (reviewedOrders.length === 0) return;
+
+      await Promise.allSettled(
+        reviewedOrders.map(async (order) => {
+          // Dùng ref thay vì state để luôn check giá trị mới nhất
+          if (order._id in reviewsMapRef.current) return;
+          try {
+            const review = await getReviewByOrder(token, order._id);
+            reviewsMapRef.current = { ...reviewsMapRef.current, [order._id]: review };
+            setReviewsMap((prev) => ({ ...prev, [order._id]: review }));
+          } catch {
+            reviewsMapRef.current = { ...reviewsMapRef.current, [order._id]: null };
+            setReviewsMap((prev) => ({ ...prev, [order._id]: null }));
+          }
+        })
+      );
+    },
+    [token]
+  );
+
+  // ── Xóa cache review của 1 đơn (dùng khi xóa review để re-fetch) ────────────
+  const invalidateReviewCache = useCallback((orderId: string) => {
+    delete reviewsMapRef.current[orderId];
+    setReviewsMap((prev) => {
+      const next = { ...prev };
+      delete next[orderId];
+      return next;
+    });
+  }, []);
 
   // ── Fetch Logic ─────────────────────────────────────────────────────────────
 
@@ -309,7 +469,6 @@ export default function OrdersScreen() {
       const tab = STATUS_TABS.find((t) => t.key === tabKey);
       if (!tab) return;
 
-      // Set loading / refreshing state
       setOrdersData((prev) => ({
         ...prev,
         [tabKey]: {
@@ -335,6 +494,8 @@ export default function OrdersScreen() {
             error: "",
           },
         }));
+        // Tải đánh giá ngay sau khi có danh sách đơn
+        loadReviewsForOrders(response);
       } catch (requestError) {
         setOrdersData((prev) => ({
           ...prev,
@@ -347,20 +508,16 @@ export default function OrdersScreen() {
         }));
       }
     },
-    [token]
+    [token, loadReviewsForOrders]
   );
 
-  // ── Lazy Load: fetch a tab only the FIRST time it becomes active ─────────────
+  // ── Lazy Load ─────────────────────────────────────────────────────────────
 
   const fetchTabIfNeeded = useCallback(
     (index: number) => {
       const tabKey = STATUS_TABS[index].key;
       setLoadedTabs((prev) => {
-        if (prev.includes(index)) {
-          // Already loaded → return cache, do NOT call API again
-          return prev;
-        }
-        // Mark as loaded and trigger fetch
+        if (prev.includes(index)) return prev;
         loadOrdersForTab(tabKey);
         return [...prev, index];
       });
@@ -368,22 +525,34 @@ export default function OrdersScreen() {
     [loadOrdersForTab]
   );
 
-  // ── Initial load for the first tab (index 0) ─────────────────────────────────
-
   useEffect(() => {
     fetchTabIfNeeded(0);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
 
-  // Reset everything when token changes (login / logout)
   useEffect(() => {
     setOrdersData(buildInitialOrdersData());
     setLoadedTabs([]);
     setActiveIndex(0);
+    reviewsMapRef.current = {};
+    setReviewsMap({});
     flatListRef.current?.scrollToIndex({ index: 0, animated: false });
   }, [token]);
 
-  // ── Auto-scroll the tab bar header to keep active tab visible ────────────────
+  // ── Re-fetch tab đang active mỗi khi màn hình được focus lại ─────────────────
+  // Đảm bảo dữ liệu luôn mới sau khi user quay về từ write-review
+  useFocusEffect(
+    useCallback(() => {
+      const activeTabKey = STATUS_TABS[activeIndex]?.key;
+      if (!activeTabKey || !token) return;
+      // Force refresh (không dùng cache loadedTabs)
+      loadOrdersForTab(activeTabKey, true);
+      // Xóa cache review để tải lại
+      reviewsMapRef.current = {};
+      setReviewsMap({});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [token, activeIndex])
+  );
 
   useEffect(() => {
     const approxTabWidth = 110;
@@ -393,7 +562,6 @@ export default function OrdersScreen() {
 
   // ── Event Handlers ───────────────────────────────────────────────────────────
 
-  // CHIỀU 1: User finishes swiping → detect landed page, update tab bar & lazy-load
   const handleMomentumScrollEnd = useCallback(
     (event: NativeSyntheticEvent<NativeScrollEvent>) => {
       const offsetX = event.nativeEvent.contentOffset.x;
@@ -406,7 +574,6 @@ export default function OrdersScreen() {
     [windowWidth, fetchTabIfNeeded]
   );
 
-  // CHIỀU 2: User taps a tab header → scroll pager to that page & lazy-load
   const handleTabPress = useCallback(
     (index: number) => {
       setActiveIndex(index);
@@ -431,7 +598,6 @@ export default function OrdersScreen() {
               try {
                 setCancellingOrderId(orderId);
                 await cancelOrder(token, orderId);
-                // Force-refresh current tab data after cancellation
                 await loadOrdersForTab(tabKey, false);
                 Alert.alert("Thành công", "Đã hủy đơn hàng thành công");
               } catch (requestError) {
@@ -457,13 +623,10 @@ export default function OrdersScreen() {
         return;
       }
       if (tabKey === "review") {
-        const firstItem = order.items[0];
-        if (firstItem) {
-          router.push({
-            pathname: "/customer/product-detail",
-            params: { id: firstItem.productId },
-          });
-        }
+        router.push({
+          pathname: "/customer/write-review" as any,
+          params: { orderId: order._id },
+        });
         return;
       }
       router.push({
@@ -478,6 +641,65 @@ export default function OrdersScreen() {
     router.push({
       pathname: "/customer/order-detail",
       params: { id: order._id },
+    });
+  }, []);
+
+  // ── Xóa đánh giá ─────────────────────────────────────────────────────────
+
+  const handleDeleteReview = useCallback(
+    (order: Order, review: Review) => {
+      Alert.alert(
+        "Xóa đánh giá",
+        "Bạn có chắc chắn muốn xóa đánh giá này không?",
+        [
+          { text: "Hủy", style: "cancel" },
+          {
+            text: "Xóa",
+            style: "destructive",
+            onPress: async () => {
+              if (!token) return;
+              try {
+                await deleteReview(token, review._id);
+                // Xóa cache review (cả ref lẫn state)
+                invalidateReviewCache(order._id);
+                // Cập nhật isReviewed = false trực tiếp trong local state
+                setOrdersData((prev) => {
+                  const updated = { ...prev };
+                  for (const key of Object.keys(updated) as StatusTabKey[]) {
+                    updated[key] = {
+                      ...updated[key],
+                      orders: updated[key].orders.map((o) =>
+                        o._id === order._id ? { ...o, isReviewed: false } : o
+                      ),
+                    };
+                  }
+                  return updated;
+                });
+                Alert.alert("Đã xóa", "Đánh giá của bạn đã được xóa.");
+              } catch (err) {
+                Alert.alert("Lỗi", getErrorMessage(err));
+              }
+            },
+          },
+        ]
+      );
+    },
+    [token, invalidateReviewCache]
+  );
+
+  // ── Sửa đánh giá ─────────────────────────────────────────────────────────
+
+  const handleEditReview = useCallback((order: Order, review: Review) => {
+    router.push({
+      pathname: "/customer/write-review" as any,
+      params: {
+        orderId: order._id,
+        reviewId: review._id,
+        mode: "edit",
+        initialRating: String(review.rating),
+        initialComment: review.comment,
+        initialImages: JSON.stringify(review.images ?? []),
+      },
     });
   }, []);
 
@@ -531,9 +753,7 @@ export default function OrdersScreen() {
         bounces={false}
         showsHorizontalScrollIndicator={false}
         keyExtractor={(item) => item.key}
-        // Only fires AFTER swipe momentum stops → prevents rapid API spam
         onMomentumScrollEnd={handleMomentumScrollEnd}
-        // Pre-renders 1 adjacent page each side for smooth peek-preview
         windowSize={3}
         initialNumToRender={1}
         maxToRenderPerBatch={1}
@@ -545,10 +765,15 @@ export default function OrdersScreen() {
         renderItem={({ item: tab }: { item: StatusTab }) => (
           <TabPage
             cancellingOrderId={cancellingOrderId}
+            reviewsMap={reviewsMap}
             tab={tab}
             tabData={ordersData[tab.key]}
             windowWidth={windowWidth}
             onActionPress={(order) => handleActionPress(order, tab.key)}
+            onDeleteReview={(order, review) =>
+              handleDeleteReview(order, review)
+            }
+            onEditReview={(order, review) => handleEditReview(order, review)}
             onOrderPress={handleOrderPress}
             onRefresh={() => loadOrdersForTab(tab.key, true)}
           />
@@ -759,5 +984,74 @@ const styles = StyleSheet.create({
   },
   actionButtonTextDanger: {
     color: "#c33e53",
+  },
+  reviewButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    height: 34,
+    paddingHorizontal: 14,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#a8cfc3",
+    backgroundColor: "#eaf2ee",
+  },
+  reviewButtonText: {
+    color: "#2d5a4b",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+
+  // ── Review Preview ───────────────────────────────────────────────────────────
+  reviewPreview: {
+    marginTop: 12,
+    padding: 12,
+    borderRadius: 10,
+    backgroundColor: "#f8f9f6",
+    borderWidth: 1,
+    borderColor: "#e8ebe4",
+  },
+  reviewPreviewHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  starsRow: {
+    flexDirection: "row",
+    gap: 2,
+  },
+  reviewActions: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  reviewActionBtn: {
+    width: 30,
+    height: 30,
+    borderRadius: 8,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#eaf2ee",
+  },
+  reviewActionBtnDanger: {
+    backgroundColor: "#fff0f2",
+  },
+  reviewComment: {
+    marginTop: 6,
+    color: "#4a4c49",
+    fontSize: 12,
+    lineHeight: 17,
+  },
+  reviewImagesScroll: {
+    marginTop: 8,
+  },
+  reviewImagesRow: {
+    flexDirection: "row",
+    gap: 6,
+  },
+  reviewImageThumb: {
+    width: 52,
+    height: 52,
+    borderRadius: 8,
+    backgroundColor: "#e8ebe4",
   },
 });

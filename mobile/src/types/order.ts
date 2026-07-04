@@ -36,6 +36,7 @@ export type Order = {
   paymentMethod: string | null;
   checkoutUrl?: string;
   shippingAddress: ShippingAddress | null;
+  isReviewed: boolean;
   createdAt: string;
 };
 
