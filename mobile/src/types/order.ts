@@ -34,11 +34,20 @@ export type Order = {
   status: string;
   paymentStatus: string;
   paymentMethod: string | null;
+  checkoutUrl?: string;
   shippingAddress: ShippingAddress | null;
   createdAt: string;
 };
 
 export type PaymentMethod = "COD" | "BANK_TRANSFER";
+
+export type PaymentLink = {
+  checkoutUrl: string;
+  expiredAt?: string;
+  paymentLinkId?: string;
+  qrImage?: string | null;
+  qrCode?: string;
+};
 
 export type CreateOnlineOrderPayload = {
   storeId: string;
@@ -47,4 +56,9 @@ export type CreateOnlineOrderPayload = {
   shippingAddress?: ShippingAddress | null;
   shippingFee?: number;
   paymentMethod?: PaymentMethod;
+};
+
+export type CreateOnlineOrderResponse = {
+  order: Order;
+  payment?: PaymentLink;
 };

@@ -38,6 +38,7 @@ const formatDate = (isoDate: string) =>
 
 type StatusTabKey =
   | "pending"
+  | "paid"
   | "shipping"
   | "delivered"
   | "review"
@@ -47,10 +48,17 @@ type StatusTab = {
   key: StatusTabKey;
   label: string;
   apiStatus: string;
+  paymentStatus?: string;
 };
 
 const STATUS_TABS: StatusTab[] = [
   { key: "pending", label: "Chờ xác nhận", apiStatus: "PENDING" },
+  {
+    key: "paid",
+    label: "Đã thanh toán",
+    apiStatus: "PENDING",
+    paymentStatus: "PAID",
+  },
   {
     key: "shipping",
     label: "Chờ giao hàng",
@@ -99,6 +107,7 @@ const buildInitialTabState = (): TabData => ({
 
 const buildInitialOrdersData = (): OrdersDataState => ({
   pending: buildInitialTabState(),
+  paid: buildInitialTabState(),
   shipping: buildInitialTabState(),
   delivered: buildInitialTabState(),
   review: buildInitialTabState(),
@@ -312,7 +321,11 @@ export default function OrdersScreen() {
       }));
 
       try {
-        const response = await getOrders(token, tab.apiStatus);
+        const response = await getOrders(
+          token,
+          tab.apiStatus,
+          tab.paymentStatus || (tab.key === "pending" ? "UNPAID" : undefined)
+        );
         setOrdersData((prev) => ({
           ...prev,
           [tabKey]: {

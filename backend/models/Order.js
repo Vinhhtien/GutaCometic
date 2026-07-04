@@ -180,6 +180,45 @@ const orderSchema = new mongoose.Schema(
       enum: values(PAYMENT_METHODS),
       default: null,
     },
+    paymentProvider: {
+      type: String,
+      enum: ["PAYOS"],
+      default: null,
+    },
+    paymentOrderCode: {
+      type: Number,
+      unique: true,
+      sparse: true,
+      default: undefined,
+    },
+    paymentLinkId: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    checkoutUrl: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    qrCode: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    paymentReference: {
+      type: String,
+      trim: true,
+      default: "",
+    },
+    paymentProviderUpdatedAt: {
+      type: Date,
+      default: null,
+    },
+    paymentExpiresAt: {
+      type: Date,
+      default: null,
+    },
     inventoryReserved: {
       type: Boolean,
       default: false,

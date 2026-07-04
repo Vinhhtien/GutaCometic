@@ -1,21 +1,37 @@
 import { apiRequest } from "@/services/api";
-import { CreateOnlineOrderPayload, Order } from "@/types/order";
+import {
+  CreateOnlineOrderPayload,
+  CreateOnlineOrderResponse,
+  Order,
+} from "@/types/order";
 
 export const createOnlineOrder = async (
   token: string,
   payload: CreateOnlineOrderPayload
 ) => {
-  const response = await apiRequest<{ order: Order }>("/orders/online", {
+  return apiRequest<CreateOnlineOrderResponse>("/orders/online", {
     token,
     method: "POST",
     body: payload,
   });
-
-  return response.order;
 };
 
-export const getOrders = async (token: string, status?: string) => {
-  const query = status ? `?status=${encodeURIComponent(status)}` : "";
+export const getOrders = async (
+  token: string,
+  status?: string,
+  paymentStatus?: string
+) => {
+  const params = new URLSearchParams();
+
+  if (status) {
+    params.set("status", status);
+  }
+
+  if (paymentStatus) {
+    params.set("paymentStatus", paymentStatus);
+  }
+
+  const query = params.toString() ? `?${params.toString()}` : "";
   const response = await apiRequest<{ orders: Order[] }>(`/orders${query}`, {
     token,
   });
@@ -46,4 +62,27 @@ export const cancelOrder = async (
   );
 
   return response.order;
+};
+
+export const syncPayosPaymentStatus = async (
+  token: string,
+  orderId: string
+) => {
+  return apiRequest<{ order: Order; payosStatus: string }>(
+    `/payments/payos/orders/${orderId}/sync`,
+    {
+      token,
+      method: "POST",
+    }
+  );
+};
+
+export const getPayosPaymentLink = async (token: string, orderId: string) => {
+  const response = await apiRequest<{
+    payment: CreateOnlineOrderResponse["payment"];
+  }>(`/payments/payos/orders/${orderId}/link`, {
+    token,
+  });
+
+  return response.payment;
 };

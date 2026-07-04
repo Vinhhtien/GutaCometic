@@ -1,8 +1,19 @@
 const orderService = require("../services/orderService");
+const payosService = require("../../payment/services/payosService");
+const { PAYMENT_METHODS } = require("../../../constants/business");
 
 const createOnlineOrder = async (req, res, next) => {
   try {
     const order = await orderService.createOnlineOrder(req.body, req.user);
+
+    if (order.paymentMethod === PAYMENT_METHODS.BANK_TRANSFER) {
+      const payment = await payosService.createPayosPaymentLink(
+        order._id,
+        req.user
+      );
+      return res.status(201).json({ order, payment });
+    }
+
     res.status(201).json({ order });
   } catch (error) {
     next(error);
