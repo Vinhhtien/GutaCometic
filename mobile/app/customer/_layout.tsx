@@ -67,6 +67,31 @@ export default function CustomerLayout() {
           animation: "slide_from_right",
         }}
       />
+      <Stack.Screen
+        name="order-detail"
+        options={{
+          gestureEnabled: true,
+          gestureDirection: "horizontal",
+          animation: "slide_from_right",
+        }}
+      />
+      <Stack.Screen
+        name="write-review"
+        options={{
+          gestureEnabled: true,
+          gestureDirection: "horizontal",
+          animation: "slide_from_right",
+        }}
+      />
+      <Stack.Screen
+        name="filter"
+        options={{
+          gestureEnabled: true,
+          gestureDirection: "horizontal",
+          animation: "slide_from_right",
+          headerShown: false,
+        }}
+      />
     </Stack>
   );
 }

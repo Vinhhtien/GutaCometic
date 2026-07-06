@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
@@ -20,6 +20,10 @@ import { getErrorMessage } from "@/services/api";
 import { getProducts } from "@/services/productService";
 import { Product } from "@/types/product";
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Constants
+// ─────────────────────────────────────────────────────────────────────────────
+
 const skinTypeFilters = [
   { label: "Tất cả", value: "" },
   { label: "Da dầu", value: "Da dầu" },
@@ -30,16 +34,64 @@ const skinTypeFilters = [
   { label: "Da thường", value: "Da thường" },
 ];
 
+const BRAND_OPTIONS = [
+  "La Roche-Posay",
+  "Vichy",
+  "GUTA Test",
+  "Bioderma",
+  "CeraVe",
+  "Neutrogena",
+];
+
+const SKIN_TYPE_OPTIONS = [
+  "Da dầu",
+  "Da khô",
+  "Da nhạy cảm",
+  "Da mụn",
+  "Da lão hóa",
+  "Da thường",
+];
+
 const formatPrice = (price: number) =>
   `${new Intl.NumberFormat("vi-VN").format(price)}đ`;
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Types
+// ─────────────────────────────────────────────────────────────────────────────
+
+interface FilterState {
+  minPrice: string;
+  maxPrice: string;
+  selectedBrand: string;
+  selectedSkinType: string;
+}
+
+const DEFAULT_FILTER: FilterState = {
+  minPrice: "",
+  maxPrice: "",
+  selectedBrand: "",
+  selectedSkinType: "",
+};
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Main Screen
+// ─────────────────────────────────────────────────────────────────────────────
 
 export default function CategoryScreen() {
   const { token } = useAuth();
   const params = useLocalSearchParams<{
     selectedCategory?: string;
     search?: string;
+    // Filter values passed back from filter.tsx via router.navigate
+    filterMinPrice?: string;
+    filterMaxPrice?: string;
+    filterBrand?: string;
+    filterSkinType?: string;
+    filterTs?: string; // timestamp to force re-read
   }>();
-  const [products, setProducts] = useState<Product[]>([]);
+
+  // ── Server-fetch state ──
+  const [allProducts, setAllProducts] = useState<Product[]>([]);
   const [searchText, setSearchText] = useState(params.search ?? "");
   const [search, setSearch] = useState(params.search ?? "");
   const [category, setCategory] = useState(params.selectedCategory ?? "");
@@ -47,26 +99,34 @@ export default function CategoryScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState("");
+
+  // ── Applied filter — read from params returned by filter.tsx ──
+  const [appliedFilter, setAppliedFilter] = useState<FilterState>(
+    DEFAULT_FILTER
+  );
+
+  // Sync filter whenever filter.tsx navigates back with new values
+  useEffect(() => {
+    const fp = params.filterTs; // only update when filter screen applied
+    if (!fp) return;
+    setAppliedFilter({
+      minPrice: params.filterMinPrice ?? "",
+      maxPrice: params.filterMaxPrice ?? "",
+      selectedBrand: params.filterBrand ?? "",
+      selectedSkinType: params.filterSkinType ?? "",
+    });
+  }, [params.filterTs]);
+
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
-    if (debounceRef.current) {
-      clearTimeout(debounceRef.current);
-    }
-
-    debounceRef.current = setTimeout(() => {
-      setSearch(searchText.trim());
-    }, 300);
-
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => setSearch(searchText.trim()), 300);
     return () => {
-      if (debounceRef.current) {
-        clearTimeout(debounceRef.current);
-      }
+      if (debounceRef.current) clearTimeout(debounceRef.current);
     };
   }, [searchText]);
 
-  // Home screen navigates here with fresh params (e.g. tapping another
-  // category chip while already on this screen), so keep local state in sync.
   useEffect(() => {
     setSearchText(params.search ?? "");
     setSearch(params.search ?? "");
@@ -74,13 +134,11 @@ export default function CategoryScreen() {
   }, [params.search, params.selectedCategory]);
 
   const loadProducts = useCallback(async () => {
-    if (!token) {
-      return;
-    }
-
+    if (!token) return;
     try {
       setError("");
-      setProducts(await getProducts(token, { search, skinType, category }));
+      const data = await getProducts(token, { search, skinType, category });
+      setAllProducts(data);
     } catch (requestError) {
       setError(getErrorMessage(requestError));
     } finally {
@@ -99,6 +157,70 @@ export default function CategoryScreen() {
     loadProducts();
   };
 
+  // ── Open filter screen ──
+  const handleOpenFilter = () => {
+    router.push({
+      pathname: "/customer/filter" as any,
+      params: {
+        minPrice: appliedFilter.minPrice,
+        maxPrice: appliedFilter.maxPrice,
+        selectedBrand: appliedFilter.selectedBrand,
+        selectedSkinType: appliedFilter.selectedSkinType,
+      },
+    });
+  };
+
+  // ── Derived: products after client-side filter ──
+  const products = useMemo<Product[]>(() => {
+    const min = appliedFilter.minPrice
+      ? parseFloat(appliedFilter.minPrice)
+      : null;
+    const max = appliedFilter.maxPrice
+      ? parseFloat(appliedFilter.maxPrice)
+      : null;
+    const brand = appliedFilter.selectedBrand;
+    const st = appliedFilter.selectedSkinType;
+
+    // If no advanced filter is active just return everything from server
+    if (min === null && max === null && !brand && !st) return allProducts;
+
+    return allProducts.filter((p) => {
+      if (min !== null && p.price < min) return false;
+      if (max !== null && p.price > max) return false;
+      if (brand && p.brand.toLowerCase() !== brand.toLowerCase()) return false;
+      if (st && !p.skinTypes.some((s) => s === st)) return false;
+      return true;
+    });
+  }, [allProducts, appliedFilter]);
+
+  // Count active advanced filters for badge
+  const activeFilterCount = [
+    appliedFilter.minPrice,
+    appliedFilter.maxPrice,
+    appliedFilter.selectedBrand,
+    appliedFilter.selectedSkinType,
+  ].filter(Boolean).length;
+
+  const isFilterActive = activeFilterCount > 0;
+
+  // ── Reset filter ──
+  const handleResetFilter = () => {
+    setAppliedFilter(DEFAULT_FILTER);
+  };
+
+  // ── Determine correct empty-state message ──
+  const emptyTitle = error
+    ? "Không thể tải sản phẩm"
+    : isFilterActive
+    ? "Không tìm thấy sản phẩm phù hợp"
+    : "Không tìm thấy sản phẩm";
+
+  const emptyMessage = error
+    ? error
+    : isFilterActive
+    ? "Không có sản phẩm nào khớp với bộ lọc nâng cao. Hãy thử thay đổi tiêu chí lọc."
+    : "Hãy thử thay đổi từ khóa hoặc bộ lọc loại da.";
+
   return (
     <SafeAreaView edges={["top"]} style={styles.safeArea}>
       <FlatList
@@ -115,18 +237,33 @@ export default function CategoryScreen() {
             />
           ) : (
             <View style={styles.emptyState}>
-              <Ionicons color="#9b9d99" name="search-outline" size={28} />
-              <Text style={styles.emptyTitle}>
-                {error ? "Không thể tải sản phẩm" : "Không tìm thấy sản phẩm"}
-              </Text>
-              <Text style={styles.emptyMessage}>
-                {error || "Hãy thử thay đổi từ khóa hoặc bộ lọc loại da."}
-              </Text>
+              <View style={styles.emptyIconWrap}>
+                <Ionicons
+                  color={isFilterActive ? "#c33e53" : "#9b9d99"}
+                  name={
+                    isFilterActive ? "filter-outline" : "search-outline"
+                  }
+                  size={28}
+                />
+              </View>
+              <Text style={styles.emptyTitle}>{emptyTitle}</Text>
+              <Text style={styles.emptyMessage}>{emptyMessage}</Text>
+              {isFilterActive && (
+                <Pressable
+                  onPress={handleResetFilter}
+                  style={styles.emptyResetBtn}
+                >
+                  <Text style={styles.emptyResetBtnText}>
+                    Xóa bộ lọc nâng cao
+                  </Text>
+                </Pressable>
+              )}
             </View>
           )
         }
         ListHeaderComponent={
           <>
+            {/* ── Search bar ── */}
             <View style={styles.searchBar}>
               <Ionicons color="#767676" name="search-outline" size={20} />
               <TextInput
@@ -136,11 +273,89 @@ export default function CategoryScreen() {
                 style={styles.searchInput}
                 value={searchText}
               />
-              <Pressable accessibilityLabel="Bộ lọc" style={styles.filterButton}>
+              <Pressable
+                accessibilityLabel="Mở bộ lọc nâng cao"
+                onPress={handleOpenFilter}
+                style={[
+                  styles.filterButton,
+                  isFilterActive && styles.filterButtonActive,
+                ]}
+              >
                 <Ionicons color="#ffffff" name="options-outline" size={19} />
+                {isFilterActive && (
+                  <View style={styles.filterBadge}>
+                    <Text style={styles.filterBadgeText}>
+                      {activeFilterCount}
+                    </Text>
+                  </View>
+                )}
               </Pressable>
             </View>
 
+            {/* ── Active filter chips summary ── */}
+            {isFilterActive && (
+              <ScrollView
+                contentContainerStyle={styles.activeFilterBar}
+                horizontal
+                showsHorizontalScrollIndicator={false}
+              >
+                {appliedFilter.minPrice !== "" ||
+                appliedFilter.maxPrice !== "" ? (
+                  <View style={styles.activeFilterChip}>
+                    <Ionicons
+                      color="#c33e53"
+                      name="cash-outline"
+                      size={12}
+                    />
+                    <Text style={styles.activeFilterChipText}>
+                      {appliedFilter.minPrice
+                        ? `${parseInt(appliedFilter.minPrice).toLocaleString("vi-VN")}đ`
+                        : "0đ"}{" "}
+                      –{" "}
+                      {appliedFilter.maxPrice
+                        ? `${parseInt(appliedFilter.maxPrice).toLocaleString("vi-VN")}đ`
+                        : "∞"}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {appliedFilter.selectedBrand ? (
+                  <View style={styles.activeFilterChip}>
+                    <Ionicons
+                      color="#c33e53"
+                      name="pricetag-outline"
+                      size={12}
+                    />
+                    <Text style={styles.activeFilterChipText}>
+                      {appliedFilter.selectedBrand}
+                    </Text>
+                  </View>
+                ) : null}
+
+                {appliedFilter.selectedSkinType ? (
+                  <View style={styles.activeFilterChip}>
+                    <Ionicons
+                      color="#c33e53"
+                      name="sparkles-outline"
+                      size={12}
+                    />
+                    <Text style={styles.activeFilterChipText}>
+                      {appliedFilter.selectedSkinType}
+                    </Text>
+                  </View>
+                ) : null}
+
+                <Pressable
+                  onPress={handleResetFilter}
+                  style={styles.activeFilterClearChip}
+                >
+                  <Ionicons color="#666865" name="close" size={12} />
+                  <Text style={styles.activeFilterClearText}>Xóa tất cả</Text>
+                </Pressable>
+              </ScrollView>
+            )}
+
+            {/* ── Category active bar ── */}
             {category ? (
               <View style={styles.activeCategoryBar}>
                 <Text style={styles.activeCategoryText}>
@@ -148,14 +363,15 @@ export default function CategoryScreen() {
                 </Text>
                 <Pressable
                   accessibilityLabel="Bỏ chọn danh mục"
-                  onPress={() => setCategory("")}
                   hitSlop={8}
+                  onPress={() => setCategory("")}
                 >
                   <Ionicons color="#252525" name="close-circle" size={18} />
                 </Pressable>
               </View>
             ) : null}
 
+            {/* ── Skin type quick-filter row ── */}
             <ScrollView
               contentContainerStyle={styles.filterList}
               horizontal
@@ -163,7 +379,6 @@ export default function CategoryScreen() {
             >
               {skinTypeFilters.map((item) => {
                 const isActive = skinType === item.value;
-
                 return (
                   <Pressable
                     key={item.label}
@@ -215,6 +430,10 @@ export default function CategoryScreen() {
   );
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// ProductGridCard
+// ─────────────────────────────────────────────────────────────────────────────
+
 function ProductGridCard({ product }: { product: Product }) {
   const { isLiked, toggleLike } = useWishlist();
   const isFavorite = isLiked(product._id);
@@ -263,6 +482,12 @@ function ProductGridCard({ product }: { product: Product }) {
   );
 }
 
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Styles — Screen
+// ─────────────────────────────────────────────────────────────────────────────
+
+
 const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
@@ -302,6 +527,64 @@ const styles = StyleSheet.create({
     marginRight: 4,
     borderRadius: 9,
     backgroundColor: "#252525",
+  },
+  filterButtonActive: {
+    backgroundColor: "#c33e53",
+  },
+  filterBadge: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  filterBadgeText: {
+    fontSize: 9,
+    fontWeight: "800",
+    color: "#c33e53",
+  },
+  // Active filter summary bar
+  activeFilterBar: {
+    flexDirection: "row",
+    gap: 8,
+    paddingTop: 12,
+    paddingBottom: 2,
+  },
+  activeFilterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#f5c0c9",
+    backgroundColor: "#fff5f6",
+  },
+  activeFilterChipText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#c33e53",
+  },
+  activeFilterClearChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "#d9dad6",
+    backgroundColor: "#f4f5f2",
+  },
+  activeFilterClearText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#666865",
   },
   activeCategoryBar: {
     flexDirection: "row",
@@ -358,9 +641,18 @@ const styles = StyleSheet.create({
     marginTop: 30,
     borderWidth: 1,
     borderColor: "#e1e2df",
-    borderRadius: 8,
-    padding: 25,
+    borderRadius: 16,
+    padding: 28,
     backgroundColor: "#ffffff",
+  },
+  emptyIconWrap: {
+    width: 64,
+    height: 64,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 32,
+    backgroundColor: "#f6f7f5",
+    marginBottom: 4,
   },
   emptyTitle: {
     marginTop: 14,
@@ -375,6 +667,18 @@ const styles = StyleSheet.create({
     fontSize: 13,
     lineHeight: 19,
     textAlign: "center",
+  },
+  emptyResetBtn: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: "#252525",
+  },
+  emptyResetBtnText: {
+    color: "#ffffff",
+    fontSize: 13,
+    fontWeight: "700",
   },
   inlineError: {
     flexDirection: "row",

@@ -554,43 +554,15 @@ const cancelOrder = (orderId, actor, reason = "") =>
 
 const NEEDS_REVIEW_FILTER = "NEEDS_REVIEW";
 
-const getOrdersNeedingReview = async (query, user) => {
-  const completedOrders = await Order.find({
+const getOrdersNeedingReview = async (query) => {
+  return Order.find({
     ...query,
     status: ORDER_STATUSES.COMPLETED,
+    isReviewed: false,
   })
     .populate("storeId", "name address phone")
     .sort({ createdAt: -1 })
     .lean();
-
-  if (completedOrders.length === 0) {
-    return completedOrders;
-  }
-
-  const productIds = [
-    ...new Set(
-      completedOrders.flatMap((order) =>
-        order.items.map((item) => String(item.productId))
-      )
-    ),
-  ];
-
-  const reviewedProductIds = new Set(
-    (
-      await Review.find({
-        customerId: user._id,
-        productId: { $in: productIds },
-      })
-        .select("productId")
-        .lean()
-    ).map((review) => String(review.productId))
-  );
-
-  return completedOrders.filter((order) =>
-    order.items.some(
-      (item) => !reviewedProductIds.has(String(item.productId))
-    )
-  );
 };
 
 const getOrdersForUser = async (user, filters = {}) => {
@@ -615,7 +587,7 @@ const getOrdersForUser = async (user, filters = {}) => {
   }
 
   if (filters.status === NEEDS_REVIEW_FILTER) {
-    return getOrdersNeedingReview(query, user);
+    return getOrdersNeedingReview(query);
   }
 
   if (filters.status) {
