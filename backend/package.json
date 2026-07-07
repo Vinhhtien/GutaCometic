@@ -9,6 +9,8 @@
     "start": "node server.js",
     "seed": "node seed.js",
     "seed:real-products": "node seedRealProducts.js",
+    "seed:demo-users": "node scripts/seedDemoUsers.js",
+    "seed:demo-stores": "node scripts/seedDemoStores.js",
     "check:transactions": "node scripts/checkTransactions.js",
     "check:email": "node scripts/checkEmailOtp.js",
     "db:sync-user-indexes": "node scripts/syncUserIndexes.js"

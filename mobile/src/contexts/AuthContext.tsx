@@ -20,8 +20,8 @@ type AuthContextValue = {
   isLoading: boolean;
   token: string | null;
   user: User | null;
-  login: (identifier: string, password: string) => Promise<void>;
-  loginWithGoogle: (idToken: string) => Promise<void>;
+  login: (identifier: string, password: string) => Promise<User>;
+  loginWithGoogle: (idToken: string) => Promise<User>;
   logout: () => Promise<void>;
   requestRegistrationOtp: (
     payload: RegisterPayload
@@ -74,11 +74,13 @@ export function AuthProvider({ children }: PropsWithChildren) {
   const login = async (identifier: string, password: string) => {
     const response = await authService.login({ identifier, password });
     await persistSession(response.user, response.token);
+    return response.user;
   };
 
   const loginWithGoogle = async (idToken: string) => {
     const response = await authService.loginWithGoogle(idToken);
     await persistSession(response.user, response.token);
+    return response.user;
   };
 
   const requestRegistrationOtp = (payload: RegisterPayload) =>

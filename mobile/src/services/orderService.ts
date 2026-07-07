@@ -1,5 +1,6 @@
 import { apiRequest } from "@/services/api";
 import {
+  CreateOfflineOrderPayload,
   CreateOnlineOrderPayload,
   CreateOnlineOrderResponse,
   Order,
@@ -16,10 +17,24 @@ export const createOnlineOrder = async (
   });
 };
 
+export const createOfflineOrder = async (
+  token: string,
+  payload: CreateOfflineOrderPayload
+) => {
+  const response = await apiRequest<{ order: Order }>("/orders/offline", {
+    token,
+    method: "POST",
+    body: payload,
+  });
+
+  return response.order;
+};
+
 export const getOrders = async (
   token: string,
   status?: string,
-  paymentStatus?: string
+  paymentStatus?: string,
+  channel?: string
 ) => {
   const params = new URLSearchParams();
 
@@ -29,6 +44,10 @@ export const getOrders = async (
 
   if (paymentStatus) {
     params.set("paymentStatus", paymentStatus);
+  }
+
+  if (channel) {
+    params.set("channel", channel);
   }
 
   const query = params.toString() ? `?${params.toString()}` : "";
@@ -58,6 +77,35 @@ export const cancelOrder = async (
       token,
       method: "PATCH",
       body: reason ? { reason } : undefined,
+    }
+  );
+
+  return response.order;
+};
+
+export const updateOnlineOrderStatus = async (
+  token: string,
+  orderId: string,
+  status: string
+) => {
+  const response = await apiRequest<{ order: Order }>(
+    `/orders/${orderId}/online-status`,
+    {
+      token,
+      method: "PATCH",
+      body: { status },
+    }
+  );
+
+  return response.order;
+};
+
+export const approveOfflineOrder = async (token: string, orderId: string) => {
+  const response = await apiRequest<{ order: Order }>(
+    `/orders/${orderId}/approve`,
+    {
+      token,
+      method: "PATCH",
     }
   );
 

@@ -17,6 +17,7 @@ import { FormInput } from "@/components/FormInput";
 import { useAuth } from "@/contexts/AuthContext";
 import { getErrorMessage } from "@/services/api";
 import { getGoogleIdToken } from "@/services/googleSignIn";
+import { getHomeRouteForRole } from "@/utils/roleNavigation";
 import { validateLoginIdentifier } from "@/utils/authValidation";
 
 export default function LoginScreen() {
@@ -28,7 +29,7 @@ export default function LoginScreen() {
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
 
   if (!isLoading && user) {
-    return <Redirect href="/customer/home" />;
+    return <Redirect href={getHomeRouteForRole(user.role)} />;
   }
 
   const handleLogin = async () => {
@@ -45,8 +46,8 @@ export default function LoginScreen() {
 
     try {
       setIsSubmitting(true);
-      await login(identifier, password);
-      router.replace("/customer/home");
+      const loggedInUser = await login(identifier, password);
+      router.replace(getHomeRouteForRole(loggedInUser.role));
     } catch (error) {
       Alert.alert("Login failed", getErrorMessage(error));
     } finally {
@@ -58,8 +59,8 @@ export default function LoginScreen() {
     try {
       setIsGoogleSubmitting(true);
       const idToken = await getGoogleIdToken();
-      await loginWithGoogle(idToken);
-      router.replace("/customer/home");
+      const loggedInUser = await loginWithGoogle(idToken);
+      router.replace(getHomeRouteForRole(loggedInUser.role));
     } catch (error) {
       Alert.alert("Google Sign-In failed", getErrorMessage(error));
     } finally {
