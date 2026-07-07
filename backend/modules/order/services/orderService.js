@@ -434,7 +434,10 @@ const updateOnlineStatus = (orderId, nextStatus, manager) => {
     const order = await findOrderOrThrow(orderId, session);
     assertAssignedStore(manager, order.storeId);
     const allowedTransitions = {
-      [ORDER_STATUSES.PENDING]: [ORDER_STATUSES.PREPARING],
+      [ORDER_STATUSES.PENDING]:
+        order.fulfillmentType === FULFILLMENT_TYPES.STORE_PICKUP
+          ? [ORDER_STATUSES.PREPARING, ORDER_STATUSES.READY_FOR_PICKUP]
+          : [ORDER_STATUSES.PREPARING],
       [ORDER_STATUSES.PREPARING]:
         order.fulfillmentType === FULFILLMENT_TYPES.DELIVERY
           ? [ORDER_STATUSES.COMPLETED]

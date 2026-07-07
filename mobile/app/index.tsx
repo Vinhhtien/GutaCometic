@@ -1,6 +1,7 @@
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { Redirect } from "expo-router";
 import { useAuth } from "@/contexts/AuthContext";
+import { getHomeRouteForRole } from "@/utils/roleNavigation";
 
 export default function IndexScreen() {
   const { isLoading, user } = useAuth();
@@ -13,7 +14,7 @@ export default function IndexScreen() {
     );
   }
 
-  return <Redirect href={user ? "/customer/home" : "/auth/login"} />;
+  return <Redirect href={user ? getHomeRouteForRole(user.role) : "/auth/login"} />;
 }
 
 const styles = StyleSheet.create({

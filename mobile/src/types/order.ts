@@ -27,6 +27,8 @@ export type Order = {
   channel: string;
   fulfillmentType: string;
   storeId: string | OrderStoreSummary;
+  customerName?: string;
+  customerPhone?: string;
   items: OrderItem[];
   subtotal: number;
   shippingFee: number;
@@ -62,4 +64,12 @@ export type CreateOnlineOrderPayload = {
 export type CreateOnlineOrderResponse = {
   order: Order;
   payment?: PaymentLink;
+};
+
+export type CreateOfflineOrderPayload = {
+  storeId: string;
+  items: { productId: string; quantity: number }[];
+  customerName?: string;
+  customerPhone?: string;
+  customerId?: string | null;
 };
