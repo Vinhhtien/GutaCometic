@@ -27,5 +27,20 @@ router.post(
   authorize(USER_ROLES.CUSTOMER),
   paymentController.syncPayosPaymentStatus
 );
+router.post(
+  "/payos/pos-orders/:orderId/create-link",
+  authorize(USER_ROLES.MANAGER),
+  paymentController.createPosPayosPaymentLink
+);
+router.get(
+  "/payos/pos-orders/:orderId/link",
+  authorize(USER_ROLES.MANAGER),
+  paymentController.createPosPayosPaymentLink
+);
+router.post(
+  "/payos/pos-orders/:orderId/sync",
+  authorize(USER_ROLES.MANAGER),
+  paymentController.syncPosPayosPaymentStatus
+);
 
 module.exports = router;

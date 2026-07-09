@@ -32,6 +32,18 @@ const createPayosPaymentLink = async (req, res, next) => {
   }
 };
 
+const createPosPayosPaymentLink = async (req, res, next) => {
+  try {
+    const payment = await payosService.createPosPayosPaymentLink(
+      req.params.orderId,
+      req.user
+    );
+    res.status(201).json({ payment });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const handlePayosWebhook = async (req, res, next) => {
   try {
     logPayos("webhook received", {
@@ -78,13 +90,27 @@ const syncPayosPaymentStatus = async (req, res, next) => {
   }
 };
 
+const syncPosPayosPaymentStatus = async (req, res, next) => {
+  try {
+    const result = await payosService.syncPosPayosPaymentStatus(
+      req.params.orderId,
+      req.user
+    );
+    res.json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 const payosReturn = (_req, res) => {
   res.send("PayOS payment processed. You can return to GUTA Cosmetic.");
 };
 
 module.exports = {
   createPayosPaymentLink,
+  createPosPayosPaymentLink,
   handlePayosWebhook,
   payosReturn,
+  syncPosPayosPaymentStatus,
   syncPayosPaymentStatus,
 };
