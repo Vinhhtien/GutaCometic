@@ -32,6 +32,7 @@ const TASKS: TaskCard[] = [
     description: "Tạo đơn POS, quét sản phẩm, nhận thanh toán tại quầy.",
     group: "store",
     icon: "storefront-outline",
+    href: "/manager/pos-payment" as Href,
   },
   {
     title: "Xác nhận đơn online",
@@ -62,6 +63,7 @@ const TASKS: TaskCard[] = [
     description: "Theo dõi tồn kho, hàng giữ chỗ và cảnh báo thiếu hàng.",
     group: "store",
     icon: "cube-outline",
+    href: "/manager/inventory" as Href,
   },
   {
     title: "Nhập hàng điều chuyển",
@@ -74,6 +76,7 @@ const TASKS: TaskCard[] = [
     description: "Tra cứu các đơn đã xử lý tại chi nhánh.",
     group: "store",
     icon: "time-outline",
+    href: "/manager/history" as Href,
   },
 ];
 

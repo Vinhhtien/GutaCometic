@@ -4,6 +4,7 @@ import {
   CreateOnlineOrderPayload,
   CreateOnlineOrderResponse,
   Order,
+  PaymentLink,
 } from "@/types/order";
 
 export const createOnlineOrder = async (
@@ -112,6 +113,20 @@ export const approveOfflineOrder = async (token: string, orderId: string) => {
   return response.order;
 };
 
+export const payOfflineOrder = async (
+  token: string,
+  orderId: string,
+  paymentMethod: "CASH" | "CARD" | "BANK_TRANSFER"
+) => {
+  const response = await apiRequest<{ order: Order }>(`/orders/${orderId}/pay`, {
+    token,
+    method: "PATCH",
+    body: { paymentMethod },
+  });
+
+  return response.order;
+};
+
 export const syncPayosPaymentStatus = async (
   token: string,
   orderId: string
@@ -133,4 +148,32 @@ export const getPayosPaymentLink = async (token: string, orderId: string) => {
   });
 
   return response.payment;
+};
+
+export const createPosPayosPaymentLink = async (
+  token: string,
+  orderId: string
+) => {
+  const response = await apiRequest<{ payment: PaymentLink }>(
+    `/payments/payos/pos-orders/${orderId}/create-link`,
+    {
+      token,
+      method: "POST",
+    }
+  );
+
+  return response.payment;
+};
+
+export const syncPosPayosPaymentStatus = async (
+  token: string,
+  orderId: string
+) => {
+  return apiRequest<{ order: Order; payosStatus: string }>(
+    `/payments/payos/pos-orders/${orderId}/sync`,
+    {
+      token,
+      method: "POST",
+    }
+  );
 };
