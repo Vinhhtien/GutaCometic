@@ -10,7 +10,7 @@ router.use(protect);
 
 router.get(
   "/products",
-  authorize(USER_ROLES.OWNER, USER_ROLES.MANAGER, USER_ROLES.SALES),
+  authorize(USER_ROLES.OWNER, USER_ROLES.MANAGER, USER_ROLES.SALES, USER_ROLES.CUSTOMER),
   inventoryController.getProductInventory
 );
 
@@ -35,6 +35,52 @@ router.patch(
   "/restock-requests/:requestId",
   authorize(USER_ROLES.OWNER, USER_ROLES.MANAGER),
   inventoryController.updateRestockRequestStatus
+);
+
+router.post(
+  "/restock-requests/:requestId/acknowledge",
+  authorize(USER_ROLES.OWNER, USER_ROLES.MANAGER),
+  inventoryController.acknowledgeRestockRequest
+);
+
+router.post(
+  "/restock-requests/:requestId/receive",
+  authorize(USER_ROLES.OWNER, USER_ROLES.MANAGER),
+  inventoryController.receiveRestockRequest
+);
+
+router
+  .route("/receipts")
+  .get(
+    authorize(USER_ROLES.OWNER, USER_ROLES.MANAGER),
+    inventoryController.getInventoryReceipts
+  )
+  .post(
+    authorize(USER_ROLES.OWNER, USER_ROLES.MANAGER),
+    inventoryController.receiveDirectStock
+  );
+
+router
+  .route("/adjustments")
+  .get(
+    authorize(USER_ROLES.OWNER, USER_ROLES.MANAGER),
+    inventoryController.getInventoryAdjustments
+  )
+  .post(
+    authorize(USER_ROLES.OWNER, USER_ROLES.MANAGER),
+    inventoryController.createInventoryAdjustment
+  );
+
+router.get(
+  "/transfers/incoming",
+  authorize(USER_ROLES.OWNER, USER_ROLES.MANAGER),
+  inventoryController.getIncomingTransfers
+);
+
+router.post(
+  "/transfers/:transferId/confirm",
+  authorize(USER_ROLES.OWNER, USER_ROLES.MANAGER),
+  inventoryController.confirmIncomingTransfer
 );
 
 module.exports = router;

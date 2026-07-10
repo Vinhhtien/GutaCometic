@@ -84,7 +84,7 @@ const getStoreId = (storeId: unknown) =>
 
 export default function SalesOfflineOrderScreen() {
   const { section } = useLocalSearchParams<{ section?: SalesSection }>();
-  const { token, user } = useAuth();
+  const { activeStore, token, user } = useAuth();
   const [activeSection, setActiveSection] = useState<SalesSection>(
     section || "catalog"
   );
@@ -118,7 +118,7 @@ export default function SalesOfflineOrderScreen() {
     string | null
   >(null);
 
-  const currentStoreId = getStoreId(user?.storeId);
+  const currentStoreId = activeStore?._id || "";
 
   useEffect(() => {
     if (section) {
@@ -411,7 +411,10 @@ export default function SalesOfflineOrderScreen() {
 
   const validateCart = () => {
     if (!currentStoreId) {
-      Alert.alert("Thiếu chi nhánh", "Tài khoản Sales chưa được gán chi nhánh.");
+      Alert.alert(
+        "Thiếu chi nhánh",
+        "Vui lòng chọn chi nhánh đang làm việc trước khi tạo đơn."
+      );
       return false;
     }
 
@@ -676,6 +679,9 @@ export default function SalesOfflineOrderScreen() {
         <View style={styles.headerCopy}>
           <Text style={styles.eyebrow}>SALES TẠI QUẦY</Text>
           <Text style={styles.title}>Tư vấn và tạo đơn</Text>
+          <Text style={styles.subtitle}>
+            {user?.fullName} · {activeStore?.name || "Chưa chọn chi nhánh"}
+          </Text>
         </View>
         <Pressable
           onPress={() => setActiveSection("cart")}
@@ -746,6 +752,7 @@ export default function SalesOfflineOrderScreen() {
         <InventorySection
           activeFilterCount={activeProductFilterCount}
           alerts={inventoryAlerts}
+          currentStoreId={currentStoreId}
           filters={productFilters}
           filterOptions={quickFilterOptions}
           isLoading={isLoading}
@@ -911,6 +918,7 @@ function CatalogSection({
 function InventorySection({
   activeFilterCount,
   alerts,
+  currentStoreId,
   filters,
   filterOptions,
   isLoading,
@@ -928,6 +936,7 @@ function InventorySection({
 }: {
   activeFilterCount: number;
   alerts: InventoryAlert[];
+  currentStoreId: string;
   filters: ProductQuickFilters;
   filterOptions: {
     brands: string[];
@@ -950,31 +959,23 @@ function InventorySection({
   restockSubmittingProductId: string | null;
   search: string;
 }) {
+  const lowStockCount = alerts.filter((alert) => alert.type === "LOW_STOCK").length;
+  const expiryCount = alerts.filter((alert) => alert.type !== "LOW_STOCK").length;
   const hasOpenRequest = (productId: string) =>
     restockRequests.some(
       (request) =>
         String(request.productId._id) === productId && request.status === "OPEN"
     );
+  const getCurrentInventory = (item: ProductInventory) =>
+    item.inventories.find((inventory) => String(inventory.store._id) === currentStoreId);
 
   return (
     <View style={styles.content}>
-      <SearchBox
-        onChangeText={onSearch}
-        placeholder="Kiểm tồn theo tên, SKU, thương hiệu..."
-        value={search}
-      />
-      <ProductQuickFilterBar
-        activeFilterCount={activeFilterCount}
-        filters={filters}
-        options={filterOptions}
-        onChange={onFilterChange}
-        onReset={onResetFilters}
-      />
       {isLoading ? (
         <LoadingState label="Đang tải tồn kho..." />
       ) : (
         <FlatList
-          contentContainerStyle={styles.listContent}
+          contentContainerStyle={styles.inventoryListContent}
           data={products}
           keyExtractor={(item) => "inventory-" + item.product._id}
           refreshControl={
@@ -985,19 +986,63 @@ function InventorySection({
             />
           }
           ListHeaderComponent={
-            <InventoryAlertPanel
-              alerts={alerts}
-              openRequestCount={restockRequests.length}
-            />
+            <>
+                    <View style={styles.inventoryRolePanel}>
+                      <View style={styles.inventoryRoleHeader}>
+                        <View style={styles.inventoryRoleIcon}>
+                          <Ionicons color="#ffffff" name="cube-outline" size={20} />
+                        </View>
+                        <View style={styles.alertCopy}>
+                          <Text style={styles.inventoryRoleTitle}>Kho tại quầy Sales</Text>
+                          <Text style={styles.inventoryRoleText}>
+                            Kiểm số lượng tại chi nhánh, xem cảnh báo và báo Manager khi hàng sắp hết.
+                          </Text>
+                        </View>
+                      </View>
+                      <View style={styles.inventoryFlowRow}>
+                        <InventoryFlowStep icon="search-outline" label="Kiểm tồn" />
+                        <InventoryFlowStep icon="notifications-outline" label="Báo thiếu" />
+                        <InventoryFlowStep icon="person-outline" label="Manager xử lý" />
+                      </View>
+                    </View>
+              
+                    <View style={styles.stockSummaryGrid}>
+                      <StockSummaryTile label="Sắp hết hàng" value={lowStockCount} tone="warning" />
+                      <StockSummaryTile label="Hạn dùng" value={expiryCount} tone="danger" />
+                      <StockSummaryTile label="Đã báo Manager" value={restockRequests.length} tone="neutral" />
+                    </View>
+              
+                    <SearchBox
+                      onChangeText={onSearch}
+                      placeholder="Kiểm tồn theo tên, SKU, thương hiệu..."
+                      value={search}
+                    />
+                    <ProductQuickFilterBar
+                      activeFilterCount={activeFilterCount}
+                      filters={filters}
+                      options={filterOptions}
+                      onChange={onFilterChange}
+                      onReset={onResetFilters}
+                    />
+              
+                            <InventoryAlertPanel
+                alerts={alerts}
+                openRequestCount={restockRequests.length}
+              />
+            </>
           }
           renderItem={({ item }) => {
+            const currentInventory = getCurrentInventory(item);
+            const currentAvailable = currentInventory?.availableStock || 0;
+            const currentReserved = currentInventory?.reservedStock || 0;
             const openRequestExists = hasOpenRequest(item.product._id);
             const isSubmitting = restockSubmittingProductId === item.product._id;
+            const isLow = currentAvailable < 10;
 
             return (
               <Pressable
                 onPress={() => onOpenInventory(item)}
-                style={styles.inventoryCard}
+                style={[styles.inventoryCard, isLow && styles.inventoryCardWarning]}
               >
                 <View style={styles.inventoryHeader}>
                   <View style={styles.inventoryInfo}>
@@ -1008,49 +1053,103 @@ function InventorySection({
                       {item.product.brand} · {item.product.category}
                     </Text>
                   </View>
-                  <Ionicons color="#52605a" name="chevron-forward" size={18} />
-                </View>
-                {item.inventories.slice(0, 3).map((inventory) => (
-                  <View key={inventory.store._id} style={styles.stockRow}>
-                    <Text numberOfLines={1} style={styles.stockStoreName}>
-                      {inventory.store.name}
+                  <View style={[styles.stockBadge, isLow && styles.stockBadgeWarning]}>
+                    <Text style={[styles.stockBadgeValue, isLow && styles.stockBadgeValueWarning]}>
+                      {currentAvailable}
                     </Text>
-                    <Text
-                      style={[
-                        styles.stockStoreValue,
-                        inventory.availableStock <= 0 && styles.stockTextDanger,
-                      ]}
-                    >
-                      {inventory.availableStock} khả dụng
+                    <Text style={styles.stockBadgeLabel}>còn lại</Text>
+                  </View>
+                </View>
+
+                <View style={styles.branchStockPanel}>
+                  <View>
+                    <Text style={styles.branchStockLabel}>Tồn chi nhánh hiện tại</Text>
+                    <Text style={styles.branchStockValue}>{currentAvailable} khả dụng</Text>
+                  </View>
+                  <View>
+                    <Text style={styles.branchStockLabel}>Đang giữ</Text>
+                    <Text style={styles.branchStockValue}>{currentReserved}</Text>
+                  </View>
+                  <View>
+                    <Text style={styles.branchStockLabel}>Trạng thái</Text>
+                    <Text style={[styles.branchStockStatus, isLow && styles.stockTextDanger]}>
+                      {isLow ? "Sắp hết" : "Ổn định"}
                     </Text>
                   </View>
-                ))}
-                <Pressable
-                  disabled={openRequestExists || isSubmitting}
-                  onPress={() => onRequestRestock(item)}
-                  style={[
-                    styles.restockButton,
-                    openRequestExists && styles.disabledButton,
-                  ]}
-                >
-                  {isSubmitting ? (
-                    <ActivityIndicator color="#252525" />
-                  ) : (
-                    <>
-                      <Ionicons color="#252525" name="notifications-outline" size={17} />
-                      <Text style={styles.restockButtonText}>
-                        {openRequestExists
-                          ? "Đã báo Manager"
-                          : "Báo Manager nhập thêm"}
-                      </Text>
-                    </>
-                  )}
-                </Pressable>
+                </View>
+
+                <View style={styles.inventoryActionRow}>
+                  <Pressable
+                    onPress={() => onOpenInventory(item)}
+                    style={styles.inventorySecondaryAction}
+                  >
+                    <Ionicons color="#252525" name="business-outline" size={17} />
+                    <Text style={styles.inventorySecondaryActionText}>Xem các chi nhánh</Text>
+                  </Pressable>
+                  <Pressable
+                    disabled={openRequestExists || isSubmitting}
+                    onPress={() => onRequestRestock(item)}
+                    style={[
+                      styles.restockButton,
+                      openRequestExists && styles.disabledButton,
+                    ]}
+                  >
+                    {isSubmitting ? (
+                      <ActivityIndicator color="#252525" />
+                    ) : (
+                      <>
+                        <Ionicons color="#252525" name="notifications-outline" size={17} />
+                        <Text style={styles.restockButtonText}>
+                          {openRequestExists ? "Đã báo Manager" : "Báo thiếu hàng"}
+                        </Text>
+                      </>
+                    )}
+                  </Pressable>
+                </View>
               </Pressable>
             );
           }}
         />
       )}
+    </View>
+  );
+}
+
+function InventoryFlowStep({
+  icon,
+  label,
+}: {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+}) {
+  return (
+    <View style={styles.inventoryFlowStep}>
+      <Ionicons color="#52605a" name={icon} size={15} />
+      <Text style={styles.inventoryFlowText}>{label}</Text>
+    </View>
+  );
+}
+
+function StockSummaryTile({
+  label,
+  tone,
+  value,
+}: {
+  label: string;
+  tone: "danger" | "neutral" | "warning";
+  value: number;
+}) {
+  const toneStyle =
+    tone === "danger"
+      ? styles.dangerSummaryTile
+      : tone === "warning"
+        ? styles.warningSummaryTile
+        : styles.neutralSummaryTile;
+
+  return (
+    <View style={[styles.stockSummaryTile, toneStyle]}>
+      <Text style={styles.stockSummaryValue}>{value}</Text>
+      <Text style={styles.stockSummaryLabel}>{label}</Text>
     </View>
   );
 }
@@ -1062,29 +1161,21 @@ function InventoryAlertPanel({
   alerts: InventoryAlert[];
   openRequestCount: number;
 }) {
-  const lowStockCount = alerts.filter((alert) => alert.type === "LOW_STOCK").length;
-  const expiryCount = alerts.filter((alert) => alert.type !== "LOW_STOCK").length;
   const previewAlerts = alerts.slice(0, 3);
 
   return (
     <View style={styles.alertPanel}>
       <View style={styles.alertPanelHeader}>
         <View style={styles.alertCopy}>
-          <Text style={styles.alertPanelTitle}>Cảnh báo kho chi nhánh</Text>
+          <Text style={styles.alertPanelTitle}>Cảnh báo cần chú ý</Text>
           <Text style={styles.alertPanelSubtitle}>
-            Hệ thống tự báo sản phẩm dưới 10 hoặc sắp hết hạn.
+            Các mặt hàng dưới 10 sản phẩm hoặc sắp hết hạn nên được báo Manager.
           </Text>
         </View>
         <View style={styles.alertCountBox}>
           <Text style={styles.alertCountValue}>{alerts.length}</Text>
           <Text style={styles.alertCountLabel}>cảnh báo</Text>
         </View>
-      </View>
-
-      <View style={styles.alertMetricRow}>
-        <AlertMetric label="Sắp hết hàng" value={lowStockCount} />
-        <AlertMetric label="Hạn dùng" value={expiryCount} />
-        <AlertMetric label="Đã báo Manager" value={openRequestCount} />
       </View>
 
       {previewAlerts.length > 0 ? (
@@ -1116,15 +1207,6 @@ function InventoryAlertPanel({
           Chưa có cảnh báo tồn kho hoặc hạn dùng.
         </Text>
       )}
-    </View>
-  );
-}
-
-function AlertMetric({ label, value }: { label: string; value: number }) {
-  return (
-    <View style={styles.alertMetric}>
-      <Text style={styles.alertMetricValue}>{value}</Text>
-      <Text style={styles.alertMetricLabel}>{label}</Text>
     </View>
   );
 }
@@ -1863,6 +1945,7 @@ const styles = StyleSheet.create({
   headerCopy: { flex: 1 },
   eyebrow: { color: "#60716a", fontSize: 11, fontWeight: "900" },
   title: { color: "#1f2522", fontSize: 23, fontWeight: "900" },
+  subtitle: { marginTop: 3, color: "#69756f", fontSize: 13, fontWeight: "700" },
   cartButton: {
     minWidth: 48,
     height: 42,
@@ -1924,6 +2007,7 @@ const styles = StyleSheet.create({
   segmentTextActive: { color: "#ffffff" },
   content: { flex: 1, paddingHorizontal: 18, paddingBottom: 28 },
   listContent: { paddingHorizontal: 18, paddingBottom: 28 },
+  inventoryListContent: { paddingBottom: 28 },
   searchBox: {
     height: 46,
     flexDirection: "row",
@@ -2065,6 +2149,93 @@ const styles = StyleSheet.create({
     backgroundColor: "#252525",
   },
   disabledButton: { opacity: 0.58 },
+  inventoryRolePanel: {
+    gap: 12,
+    marginBottom: 10,
+    padding: 13,
+    borderRadius: 8,
+    backgroundColor: "#1f2522",
+  },
+  inventoryRoleHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 11,
+  },
+  inventoryRoleIcon: {
+    width: 40,
+    height: 40,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    backgroundColor: "#2d5a4b",
+  },
+  inventoryRoleTitle: {
+    color: "#ffffff",
+    fontSize: 15,
+    fontWeight: "900",
+  },
+  inventoryRoleText: {
+    marginTop: 4,
+    color: "#c9d4ce",
+    fontSize: 12,
+    lineHeight: 17,
+    fontWeight: "700",
+  },
+  inventoryFlowRow: {
+    flexDirection: "row",
+    gap: 8,
+  },
+  inventoryFlowStep: {
+    flex: 1,
+    minHeight: 36,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    borderRadius: 8,
+    backgroundColor: "#eef4ef",
+  },
+  inventoryFlowText: {
+    color: "#52605a",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  stockSummaryGrid: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 10,
+  },
+  stockSummaryTile: {
+    flex: 1,
+    minHeight: 58,
+    justifyContent: "center",
+    paddingHorizontal: 9,
+    borderRadius: 8,
+    borderWidth: 1,
+  },
+  warningSummaryTile: {
+    backgroundColor: "#fff7eb",
+    borderColor: "#f1d6a7",
+  },
+  dangerSummaryTile: {
+    backgroundColor: "#fff7f7",
+    borderColor: "#f0d4d8",
+  },
+  neutralSummaryTile: {
+    backgroundColor: "#ffffff",
+    borderColor: "#e2e7df",
+  },
+  stockSummaryValue: {
+    color: "#1f2522",
+    fontSize: 20,
+    fontWeight: "900",
+  },
+  stockSummaryLabel: {
+    marginTop: 2,
+    color: "#69756f",
+    fontSize: 10,
+    fontWeight: "800",
+  },
   inventoryCard: {
     marginTop: 10,
     padding: 13,
@@ -2073,8 +2244,84 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e2e7df",
   },
+  inventoryCardWarning: {
+    borderColor: "#f1d6a7",
+    backgroundColor: "#fffdf8",
+  },
   inventoryHeader: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 8 },
   inventoryInfo: { flex: 1 },
+  stockBadge: {
+    minWidth: 64,
+    minHeight: 52,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 8,
+    borderRadius: 8,
+    backgroundColor: "#eef4ef",
+  },
+  stockBadgeWarning: {
+    backgroundColor: "#fff7eb",
+  },
+  stockBadgeValue: {
+    color: "#2d5a4b",
+    fontSize: 19,
+    fontWeight: "900",
+  },
+  stockBadgeValueWarning: {
+    color: "#9a6b13",
+  },
+  stockBadgeLabel: {
+    color: "#69756f",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  branchStockPanel: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    gap: 8,
+    paddingVertical: 10,
+    borderTopWidth: 1,
+    borderTopColor: "#edf0eb",
+  },
+  branchStockLabel: {
+    color: "#69756f",
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  branchStockValue: {
+    marginTop: 3,
+    color: "#1f2522",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  branchStockStatus: {
+    marginTop: 3,
+    color: "#2d5a4b",
+    fontSize: 12,
+    fontWeight: "900",
+  },
+  inventoryActionRow: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 2,
+  },
+  inventorySecondaryAction: {
+    flex: 1,
+    minHeight: 42,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 6,
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#d9dfd8",
+  },
+  inventorySecondaryActionText: {
+    color: "#252525",
+    fontSize: 12,
+    fontWeight: "900",
+  },
   stockRow: {
     flexDirection: "row",
     alignItems: "center",
@@ -2087,12 +2334,13 @@ const styles = StyleSheet.create({
   stockStoreName: { flex: 1, color: "#52605a", fontSize: 12, fontWeight: "800" },
   stockStoreValue: { color: "#2d5a4b", fontSize: 12, fontWeight: "900" },
   restockButton: {
+    flex: 1,
     minHeight: 42,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
     gap: 7,
-    marginTop: 10,
+    marginTop: 0,
     borderRadius: 8,
     backgroundColor: "#f1f4ef",
     borderWidth: 1,

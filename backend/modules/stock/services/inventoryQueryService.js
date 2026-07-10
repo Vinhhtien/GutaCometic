@@ -1,9 +1,14 @@
 const Product = require("../../../models/Product");
+const InventoryAdjustment = require("../../../models/InventoryAdjustment");
+const InventoryReceipt = require("../../../models/InventoryReceipt");
 const InventoryRequest = require("../../../models/InventoryRequest");
 const Store = require("../../../models/Store");
 const StoreInventory = require("../../../models/StoreInventory");
+const StockTransfer = require("../../../models/StockTransfer");
 const AppError = require("../../../utils/AppError");
 const { USER_ROLES } = require("../../../constants/business");
+const inventoryMutationService = require("./inventoryService");
+const { runInTransaction } = require("./transactionService");
 
 const LOW_STOCK_WARNING_THRESHOLD = 10;
 const EXPIRY_WARNING_DAYS = 60;
@@ -11,8 +16,19 @@ const UNIVERSAL_SKIN_TYPE = "Da thường/Mọi loại da";
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
-const buildProductQuery = ({ brand, category, search, skinType } = {}) => {
+const buildProductQuery = ({ brand, category, productIds, search, skinType } = {}) => {
   const query = { isActive: true };
+
+  if (productIds) {
+    const ids = String(productIds)
+      .split(",")
+      .map((item) => item.trim())
+      .filter(Boolean);
+
+    if (ids.length > 0) {
+      query._id = { $in: ids };
+    }
+  }
 
   if (search) {
     const pattern = { $regex: escapeRegExp(search), $options: "i" };
@@ -35,8 +51,21 @@ const buildProductQuery = ({ brand, category, search, skinType } = {}) => {
 };
 
 const getProductInventory = async (filters = {}) => {
+  const parsedLimit = Number.parseInt(filters.limit, 10);
+  const normalizedLimit =
+    Number.isInteger(parsedLimit) && parsedLimit > 0
+      ? Math.min(parsedLimit, 100)
+      : null;
+  const productQuery = Product.find(buildProductQuery(filters)).sort({
+    createdAt: -1,
+  });
+
+  if (normalizedLimit) {
+    productQuery.limit(normalizedLimit);
+  }
+
   const [products, stores] = await Promise.all([
-    Product.find(buildProductQuery(filters)).sort({ createdAt: -1 }).lean(),
+    productQuery.lean(),
     Store.find({ isActive: true }).sort({ name: 1 }).lean(),
   ]);
 
@@ -162,6 +191,7 @@ const populateInventoryRequest = (request) =>
     { path: "productId", select: "name sku brand category image price" },
     { path: "requestedBy", select: "fullName email phone role" },
     { path: "handledBy", select: "fullName email phone role" },
+    { path: "acknowledgedBy", select: "fullName email phone role" },
   ]);
 
 const createRestockRequest = async ({
@@ -284,10 +314,320 @@ const updateRestockRequestStatus = async ({
   return populateInventoryRequest(request);
 };
 
+const acknowledgeRestockRequest = async ({ requestId, user }) => {
+  const request = await InventoryRequest.findById(requestId);
+
+  if (!request) {
+    throw new AppError("Restock request was not found", 404, "REQUEST_NOT_FOUND");
+  }
+
+  if (
+    user.role !== USER_ROLES.OWNER &&
+    String(request.storeId) !== String(user.storeId)
+  ) {
+    throw new AppError("You cannot acknowledge another store request", 403, "FORBIDDEN");
+  }
+
+  if (request.status !== "OPEN") {
+    throw new AppError("This restock request is already closed", 409, "REQUEST_CLOSED");
+  }
+
+  request.acknowledgedBy = user._id;
+  request.acknowledgedAt = new Date();
+  await request.save();
+
+  return populateInventoryRequest(request);
+};
+
+const receiveRestockRequest = async ({
+  managerNote,
+  receivedQuantity,
+  requestId,
+  user,
+}) => {
+  const quantity = Number.parseInt(receivedQuantity, 10);
+
+  if (!Number.isInteger(quantity) || quantity < 1) {
+    throw new AppError("Received quantity is invalid", 400, "INVALID_RECEIVED_QUANTITY");
+  }
+
+  return runInTransaction(async (session) => {
+    const request = await InventoryRequest.findById(requestId).session(session);
+
+    if (!request) {
+      throw new AppError("Restock request was not found", 404, "REQUEST_NOT_FOUND");
+    }
+
+    if (
+      user.role !== USER_ROLES.OWNER &&
+      String(request.storeId) !== String(user.storeId)
+    ) {
+      throw new AppError("You cannot receive stock for another store", 403, "FORBIDDEN");
+    }
+
+    if (request.status !== "OPEN") {
+      throw new AppError("This restock request is already closed", 409, "REQUEST_CLOSED");
+    }
+
+    await inventoryMutationService.receiveStock(
+      request.storeId,
+      [{ productId: request.productId, quantity }],
+      session
+    );
+
+    await InventoryReceipt.create(
+      [
+        {
+          storeId: request.storeId,
+          productId: request.productId,
+          quantity,
+          source: "SALES_REQUEST",
+          note:
+            managerNote || `Manager received ${quantity} item(s) from Sales request`,
+          referenceId: request._id,
+          receivedBy: user._id,
+        },
+      ],
+      { session }
+    );
+
+    request.status = "RESOLVED";
+    request.managerNote =
+      managerNote || `Manager received ${quantity} item(s) into branch stock`;
+    request.handledBy = user._id;
+    request.resolvedAt = new Date();
+    await request.save({ session });
+
+    return populateInventoryRequest(request);
+  });
+};
+
+const receiveDirectStock = async ({
+  note,
+  productId,
+  quantity,
+  storeId,
+  user,
+}) => {
+  const scopedStoreId = getScopedStoreId(user, storeId);
+  const receivedQuantity = Number.parseInt(quantity, 10);
+
+  if (!scopedStoreId) {
+    throw new AppError("Store ID is required", 400, "STORE_ID_REQUIRED");
+  }
+
+  if (!productId) {
+    throw new AppError("Product ID is required", 400, "PRODUCT_ID_REQUIRED");
+  }
+
+  if (!Number.isInteger(receivedQuantity) || receivedQuantity < 1) {
+    throw new AppError("Received quantity is invalid", 400, "INVALID_RECEIVED_QUANTITY");
+  }
+
+  return runInTransaction(async (session) => {
+    await inventoryMutationService.receiveStock(
+      scopedStoreId,
+      [{ productId, quantity: receivedQuantity }],
+      session
+    );
+
+    await InventoryReceipt.create(
+      [
+        {
+          storeId: scopedStoreId,
+          productId,
+          quantity: receivedQuantity,
+          source: "DIRECT",
+          note: note || "",
+          receivedBy: user._id,
+        },
+      ],
+      { session }
+    );
+
+    const inventory = await StoreInventory.findOne({
+      storeId: scopedStoreId,
+      productId,
+    })
+      .populate("storeId", "name address phone type")
+      .populate("productId", "name sku brand category image price")
+      .session(session);
+
+    return {
+      inventory,
+      note: note || "",
+      receivedQuantity,
+    };
+  });
+};
+
+const createInventoryAdjustment = async ({
+  note,
+  productId,
+  quantity,
+  storeId,
+  type,
+  user,
+}) => {
+  const scopedStoreId = getScopedStoreId(user, storeId);
+  const adjustmentType = String(type || "").toUpperCase();
+
+  if (!["DAMAGED", "DEFECTIVE", "LOST", "EXPIRED", "OTHER"].includes(adjustmentType)) {
+    throw new AppError("Inventory adjustment type is invalid", 400, "INVALID_ADJUSTMENT_TYPE");
+  }
+
+  const normalizedQuantity = Number.parseInt(quantity, 10);
+
+  if (!Number.isInteger(normalizedQuantity) || normalizedQuantity < 1) {
+    throw new AppError("Adjustment quantity is invalid", 400, "INVALID_ADJUSTMENT_QUANTITY");
+  }
+
+  if (!scopedStoreId || !productId) {
+    throw new AppError("Store ID and product ID are required", 400, "INVALID_ADJUSTMENT");
+  }
+
+  return runInTransaction(async (session) => {
+    await inventoryMutationService.writeOffStock(
+      scopedStoreId,
+      [{ productId, quantity: normalizedQuantity }],
+      session
+    );
+
+    const adjustment = await InventoryAdjustment.create(
+      [
+        {
+          storeId: scopedStoreId,
+          productId,
+          type: adjustmentType,
+          quantity: normalizedQuantity,
+          note: note || "",
+          createdBy: user._id,
+        },
+      ],
+      { session }
+    );
+
+    return adjustment[0].populate([
+      { path: "storeId", select: "name address phone type" },
+      { path: "productId", select: "name sku brand category image price" },
+      { path: "createdBy", select: "fullName email phone role" },
+    ]);
+  });
+};
+
+const getInventoryAdjustments = async ({ storeId, user }) => {
+  const scopedStoreId = getScopedStoreId(user, storeId);
+  const query = {};
+
+  if (scopedStoreId) {
+    query.storeId = scopedStoreId;
+  }
+
+  return InventoryAdjustment.find(query)
+    .populate("storeId", "name address phone type")
+    .populate("productId", "name sku brand category image price")
+    .populate("createdBy", "fullName email phone role")
+    .sort({ createdAt: -1 })
+    .limit(100)
+    .lean();
+};
+
+const getInventoryReceipts = async ({ storeId, user }) => {
+  const scopedStoreId = getScopedStoreId(user, storeId);
+  const query = {};
+
+  if (scopedStoreId) {
+    query.storeId = scopedStoreId;
+  }
+
+  return InventoryReceipt.find(query)
+    .populate("storeId", "name address phone type")
+    .populate("productId", "name sku brand category image price")
+    .populate("receivedBy", "fullName email phone role")
+    .sort({ createdAt: -1 })
+    .limit(100)
+    .lean();
+};
+
+const getIncomingTransfers = async ({ storeId, user }) => {
+  const scopedStoreId = getScopedStoreId(user, storeId);
+
+  if (!scopedStoreId) {
+    throw new AppError("Store ID is required", 400, "STORE_ID_REQUIRED");
+  }
+
+  return StockTransfer.find({ toStoreId: scopedStoreId, status: "PENDING" })
+    .populate("fromStoreId", "name address phone type")
+    .populate("toStoreId", "name address phone type")
+    .populate("items.productId", "name sku brand category image price")
+    .populate("createdBy", "fullName email phone role")
+    .sort({ createdAt: -1 })
+    .lean();
+};
+
+const confirmIncomingTransfer = async ({ transferId, user }) =>
+  runInTransaction(async (session) => {
+    const transfer = await StockTransfer.findById(transferId).session(session);
+
+    if (!transfer) {
+      throw new AppError("Stock transfer was not found", 404, "TRANSFER_NOT_FOUND");
+    }
+
+    if (
+      user.role !== USER_ROLES.OWNER &&
+      String(transfer.toStoreId) !== String(user.storeId)
+    ) {
+      throw new AppError("You cannot confirm another store transfer", 403, "FORBIDDEN");
+    }
+
+    if (transfer.status !== "PENDING") {
+      throw new AppError("This stock transfer is already closed", 409, "TRANSFER_CLOSED");
+    }
+
+    await inventoryMutationService.receiveStock(
+      transfer.toStoreId,
+      transfer.items,
+      session
+    );
+
+    await InventoryReceipt.create(
+      transfer.items.map((item) => ({
+        storeId: transfer.toStoreId,
+        productId: item.productId,
+        quantity: item.quantity,
+        source: "TRANSFER",
+        note: "Received from stock transfer",
+        referenceId: transfer._id,
+        receivedBy: user._id,
+      })),
+      { session }
+    );
+
+    transfer.status = "CONFIRMED";
+    transfer.confirmedBy = user._id;
+    await transfer.save({ session });
+
+    return transfer.populate([
+      { path: "fromStoreId", select: "name address phone type" },
+      { path: "toStoreId", select: "name address phone type" },
+      { path: "items.productId", select: "name sku brand category image price" },
+      { path: "createdBy", select: "fullName email phone role" },
+      { path: "confirmedBy", select: "fullName email phone role" },
+    ]);
+  });
+
 module.exports = {
+  acknowledgeRestockRequest,
+  confirmIncomingTransfer,
+  createInventoryAdjustment,
   createRestockRequest,
+  getIncomingTransfers,
+  getInventoryAdjustments,
+  getInventoryReceipts,
   getInventoryAlerts,
   getProductInventory,
   getRestockRequests,
+  receiveDirectStock,
+  receiveRestockRequest,
   updateRestockRequestStatus,
 };

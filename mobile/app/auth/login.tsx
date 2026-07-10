@@ -17,6 +17,7 @@ import { FormInput } from "@/components/FormInput";
 import { useAuth } from "@/contexts/AuthContext";
 import { getErrorMessage } from "@/services/api";
 import { getGoogleIdToken } from "@/services/googleSignIn";
+import { isStaffRole } from "@/constants/session";
 import { getHomeRouteForRole } from "@/utils/roleNavigation";
 import { validateLoginIdentifier } from "@/utils/authValidation";
 
@@ -29,7 +30,15 @@ export default function LoginScreen() {
   const [isGoogleSubmitting, setIsGoogleSubmitting] = useState(false);
 
   if (!isLoading && user) {
-    return <Redirect href={getHomeRouteForRole(user.role)} />;
+    return (
+      <Redirect
+        href={
+          isStaffRole(user.role)
+            ? "/staff/select-store"
+            : getHomeRouteForRole(user.role)
+        }
+      />
+    );
   }
 
   const handleLogin = async () => {
@@ -47,7 +56,11 @@ export default function LoginScreen() {
     try {
       setIsSubmitting(true);
       const loggedInUser = await login(identifier, password);
-      router.replace(getHomeRouteForRole(loggedInUser.role));
+      router.replace(
+        isStaffRole(loggedInUser.role)
+          ? "/staff/select-store"
+          : getHomeRouteForRole(loggedInUser.role)
+      );
     } catch (error) {
       Alert.alert("Login failed", getErrorMessage(error));
     } finally {
@@ -60,7 +73,11 @@ export default function LoginScreen() {
       setIsGoogleSubmitting(true);
       const idToken = await getGoogleIdToken();
       const loggedInUser = await loginWithGoogle(idToken);
-      router.replace(getHomeRouteForRole(loggedInUser.role));
+      router.replace(
+        isStaffRole(loggedInUser.role)
+          ? "/staff/select-store"
+          : getHomeRouteForRole(loggedInUser.role)
+      );
     } catch (error) {
       Alert.alert("Google Sign-In failed", getErrorMessage(error));
     } finally {

@@ -49,12 +49,71 @@ export type InventoryRestockRequest = {
   productId: Product;
   requestedBy: InventoryRequestUser;
   handledBy?: InventoryRequestUser | null;
+  acknowledgedBy?: InventoryRequestUser | null;
   currentAvailableStock: number;
   requestedQuantity: number;
   reason: string;
   status: "OPEN" | "RESOLVED" | "CANCELLED";
   managerNote?: string;
+  acknowledgedAt?: string | null;
   resolvedAt?: string | null;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type InventoryAdjustmentType =
+  | "DAMAGED"
+  | "DEFECTIVE"
+  | "LOST"
+  | "EXPIRED"
+  | "OTHER";
+
+export type InventoryAdjustment = {
+  _id: string;
+  storeId: OrderStoreSummary & {
+    type?: string;
+  };
+  productId: Product;
+  type: InventoryAdjustmentType;
+  quantity: number;
+  note?: string;
+  createdBy: InventoryRequestUser;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type InventoryReceiptSource = "DIRECT" | "SALES_REQUEST" | "TRANSFER";
+
+export type InventoryReceipt = {
+  _id: string;
+  storeId: OrderStoreSummary & {
+    type?: string;
+  };
+  productId: Product;
+  quantity: number;
+  source: InventoryReceiptSource;
+  note?: string;
+  referenceId?: string | null;
+  receivedBy: InventoryRequestUser;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type IncomingStockTransfer = {
+  _id: string;
+  fromStoreId: OrderStoreSummary & {
+    type?: string;
+  };
+  toStoreId: OrderStoreSummary & {
+    type?: string;
+  };
+  items: {
+    productId: Product;
+    quantity: number;
+  }[];
+  status: "PENDING" | "CONFIRMED" | "CANCELLED";
+  createdBy: InventoryRequestUser;
+  confirmedBy?: InventoryRequestUser | null;
   createdAt: string;
   updatedAt: string;
 };

@@ -30,6 +30,7 @@ const MAX_FAILED_BANK_TRANSFER_ORDERS_PER_DAY = Number(
   process.env.MAX_FAILED_BANK_TRANSFER_ORDERS_PER_DAY || 10
 );
 const PAYMENT_ABUSE_WINDOW_MS = 24 * 60 * 60 * 1000;
+const MAX_POS_DISCOUNT_PERCENT = 100;
 
 const assertRole = (user, allowedRoles) => {
   if (!allowedRoles.includes(user.role)) {
@@ -95,6 +96,30 @@ const appendStatus = (order, status, actorId, note = "") => {
     changedBy: actorId,
     note,
   });
+};
+
+const awardCustomerPoints = async (order, session) => {
+  if (!order.customerId || order.pointsEarned > 0) {
+    return null;
+  }
+
+  const pointsEarned = Math.floor(order.totalPrice / 10000);
+  order.pointsEarned = pointsEarned;
+
+  if (pointsEarned <= 0) {
+    return null;
+  }
+
+  const customer = await User.findById(order.customerId).session(session || null);
+
+  if (!customer) {
+    return null;
+  }
+
+  customer.points = Math.max(0, customer.points + pointsEarned);
+  await customer.save({ session });
+
+  return customer;
 };
 
 const expireUnpaidBankTransferOrders = async (query = {}, session) => {
@@ -372,7 +397,7 @@ const approveOfflineOrder = (orderId, salesUser) => {
   });
 };
 
-const payOfflineOrder = (orderId, paymentMethod, manager) => {
+const payOfflineOrder = (orderId, paymentMethod, manager, options = {}) => {
   assertRole(manager, [USER_ROLES.MANAGER]);
 
   if (
@@ -405,6 +430,20 @@ const payOfflineOrder = (orderId, paymentMethod, manager) => {
       );
     }
 
+    const requestedDiscountPercent = Math.max(
+      0,
+      Math.min(
+        MAX_POS_DISCOUNT_PERCENT,
+        Number(options.discountPercent || 0)
+      )
+    );
+    const maxDiscountAmount = order.subtotal + order.shippingFee;
+    order.pointsUsed = 0;
+    order.discountAmount = Math.min(
+      maxDiscountAmount,
+      Math.floor((maxDiscountAmount * requestedDiscountPercent) / 100)
+    );
+
     await inventoryService.completeReservedSale(
       order.storeId,
       order.items,
@@ -416,6 +455,8 @@ const payOfflineOrder = (orderId, paymentMethod, manager) => {
     order.paidByManagerId = manager._id;
     order.paidAt = new Date();
     order.completedAt = new Date();
+    await awardCustomerPoints(order, session);
+
     appendStatus(
       order,
       ORDER_STATUSES.COMPLETED,
@@ -491,6 +532,8 @@ const updateOnlineStatus = (orderId, nextStatus, manager) => {
           "PAYMENT_REQUIRED"
         );
       }
+
+      await awardCustomerPoints(order, session);
     }
 
     appendStatus(order, nextStatus, manager._id);
@@ -613,6 +656,7 @@ const getOrdersForUser = async (user, filters = {}) => {
   }
 
   return Order.find(query)
+    .populate("customerId", "fullName email phone points")
     .populate("storeId", "name address phone")
     .sort({ createdAt: -1 })
     .lean();
@@ -626,6 +670,7 @@ const getOrderForUser = async (orderId, user) => {
   await expireUnpaidBankTransferOrders({ _id: orderId });
 
   const order = await Order.findById(orderId)
+    .populate("customerId", "fullName email phone points")
     .populate("storeId", "name address phone")
     .lean();
 
@@ -635,7 +680,7 @@ const getOrderForUser = async (orderId, user) => {
 
   if (
     user.role === USER_ROLES.CUSTOMER &&
-    String(order.customerId) !== String(user._id)
+    String(order.customerId?._id || order.customerId) !== String(user._id)
   ) {
     throw new AppError("You cannot view this order", 403, "FORBIDDEN");
   }
@@ -652,6 +697,7 @@ const getOrderForUser = async (orderId, user) => {
 
 module.exports = {
   approveOfflineOrder,
+  awardCustomerPoints,
   cancelOrder,
   createOfflineOrder,
   createOnlineOrder,

@@ -4,6 +4,7 @@ import {
   LoginPayload,
   OtpRequestResponse,
   RegisterPayload,
+  User,
   VerifyRegistrationOtpPayload,
   VerifyResetOtpResponse,
 } from "@/types/user";
@@ -58,3 +59,6 @@ export const resetPassword = (
     method: "POST",
     body: { resetToken, password, confirmPassword },
   });
+
+export const getCurrentUser = (token: string) =>
+  apiRequest<{ user: User }>("/auth/me", { token });

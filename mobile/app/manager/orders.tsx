@@ -166,7 +166,7 @@ const getActionForOrder = (order: Order) => {
 
 export default function ManagerDashboardScreen() {
   const { module } = useLocalSearchParams<{ module?: ManagerModuleKey }>();
-  const { logout, token, user } = useAuth();
+  const { activeStore, logout, token, user } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [activeModule] =
     useState<ManagerModuleKey>(module || "onlineConfirm");
@@ -383,7 +383,7 @@ export default function ManagerDashboardScreen() {
           <Text style={styles.eyebrow}>XỬ LÝ NGHIỆP VỤ</Text>
           <Text style={styles.title}>Đơn hàng chi nhánh</Text>
           <Text style={styles.subtitle}>
-            {user?.fullName} · Thu ngân / Quản lý
+            {user?.fullName} · {activeStore?.name || "Chưa chọn chi nhánh"}
           </Text>
         </View>
         <Pressable onPress={logout} style={styles.logoutButton}>

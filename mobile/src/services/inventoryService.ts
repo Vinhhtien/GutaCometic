@@ -1,6 +1,10 @@
 import { apiRequest } from "@/services/api";
 import {
   InventoryAlert,
+  InventoryAdjustment,
+  InventoryAdjustmentType,
+  IncomingStockTransfer,
+  InventoryReceipt,
   InventoryRestockRequest,
   ProductInventory,
 } from "@/types/inventory";
@@ -8,6 +12,8 @@ import {
 export type InventoryFilters = {
   brand?: string;
   category?: string;
+  limit?: number;
+  productIds?: string[];
   search?: string;
   skinType?: string;
 };
@@ -32,6 +38,14 @@ export const getProductInventory = async (
 
   if (filters.category) {
     params.set("category", filters.category);
+  }
+
+  if (filters.limit) {
+    params.set("limit", String(filters.limit));
+  }
+
+  if (filters.productIds?.length) {
+    params.set("productIds", filters.productIds.join(","));
   }
 
   const query = params.toString();
@@ -103,4 +117,125 @@ export const updateRestockRequestStatus = async (
   );
 
   return response.request;
+};
+
+export const acknowledgeRestockRequest = async (
+  token: string,
+  requestId: string
+) => {
+  const response = await apiRequest<{ request: InventoryRestockRequest }>(
+    `/inventory/restock-requests/${requestId}/acknowledge`,
+    {
+      method: "POST",
+      token,
+    }
+  );
+
+  return response.request;
+};
+
+export const receiveRestockRequest = async (
+  token: string,
+  requestId: string,
+  payload: {
+    managerNote?: string;
+    receivedQuantity: number;
+  }
+) => {
+  const response = await apiRequest<{ request: InventoryRestockRequest }>(
+    `/inventory/restock-requests/${requestId}/receive`,
+    {
+      body: payload,
+      method: "POST",
+      token,
+    }
+  );
+
+  return response.request;
+};
+
+export const receiveDirectStock = async (
+  token: string,
+  payload: {
+    note?: string;
+    productId: string;
+    quantity: number;
+  }
+) => {
+  const response = await apiRequest<{
+    receipt: {
+      inventory: unknown;
+      note: string;
+      receivedQuantity: number;
+    };
+  }>("/inventory/receipts", {
+    body: payload,
+    method: "POST",
+    token,
+  });
+
+  return response.receipt;
+};
+
+export const getInventoryReceipts = async (token: string) => {
+  const response = await apiRequest<{ receipts: InventoryReceipt[] }>(
+    "/inventory/receipts",
+    { token }
+  );
+
+  return response.receipts;
+};
+
+export const getInventoryAdjustments = async (token: string) => {
+  const response = await apiRequest<{ adjustments: InventoryAdjustment[] }>(
+    "/inventory/adjustments",
+    { token }
+  );
+
+  return response.adjustments;
+};
+
+export const createInventoryAdjustment = async (
+  token: string,
+  payload: {
+    note?: string;
+    productId: string;
+    quantity: number;
+    type: InventoryAdjustmentType;
+  }
+) => {
+  const response = await apiRequest<{ adjustment: InventoryAdjustment }>(
+    "/inventory/adjustments",
+    {
+      body: payload,
+      method: "POST",
+      token,
+    }
+  );
+
+  return response.adjustment;
+};
+
+export const getIncomingTransfers = async (token: string) => {
+  const response = await apiRequest<{ transfers: IncomingStockTransfer[] }>(
+    "/inventory/transfers/incoming",
+    { token }
+  );
+
+  return response.transfers;
+};
+
+export const confirmIncomingTransfer = async (
+  token: string,
+  transferId: string
+) => {
+  const response = await apiRequest<{ transfer: IncomingStockTransfer }>(
+    `/inventory/transfers/${transferId}/confirm`,
+    {
+      method: "POST",
+      token,
+    }
+  );
+
+  return response.transfer;
 };

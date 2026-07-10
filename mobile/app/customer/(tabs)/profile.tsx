@@ -1,5 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
+import { useFocusEffect } from "expo-router";
 import { router } from "expo-router";
+import { useCallback } from "react";
 import {
   Pressable,
   ScrollView,
@@ -24,7 +26,7 @@ const menuItems = [
     key: "rewards",
     label: "Ưu đãi thành viên",
     icon: "gift-outline",
-    caption: "Đổi điểm tích lũy lấy voucher giảm giá",
+    caption: "Xem điểm tích lũy và đổi quà tại cửa hàng",
   },
   {
     key: "policy",
@@ -36,7 +38,13 @@ const menuItems = [
 ] as const;
 
 export default function ProfileScreen() {
-  const { logout, user } = useAuth();
+  const { logout, refreshUser, user } = useAuth();
+
+  useFocusEffect(
+    useCallback(() => {
+      refreshUser().catch(() => undefined);
+    }, [refreshUser])
+  );
 
   if (!user) {
     return null;

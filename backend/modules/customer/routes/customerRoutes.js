@@ -13,6 +13,11 @@ router.get(
   authorize(USER_ROLES.SALES, USER_ROLES.MANAGER),
   userController.searchCustomers
 );
+router.post(
+  "/:customerId/redeem-points",
+  authorize(USER_ROLES.MANAGER),
+  userController.redeemCustomerPoints
+);
 router.put("/profile", userController.updateProfile);
 
 module.exports = router;

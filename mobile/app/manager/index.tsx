@@ -66,6 +66,13 @@ const TASKS: TaskCard[] = [
     href: "/manager/inventory" as Href,
   },
   {
+    title: "Lịch sử kho",
+    description: "Xem lịch sử nhập hàng, trừ hàng lỗi, hỏng hoặc hết hạn.",
+    group: "store",
+    icon: "file-tray-full-outline",
+    href: "/manager/inventory-history" as Href,
+  },
+  {
     title: "Nhập hàng điều chuyển",
     description: "Xác nhận hàng từ kho tổng hoặc chi nhánh khác.",
     group: "store",
@@ -88,7 +95,7 @@ const formatDate = () =>
   });
 
 export default function ManagerHomeScreen() {
-  const { logout, token, user } = useAuth();
+  const { activeStore, logout, token, user } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -165,12 +172,20 @@ export default function ManagerHomeScreen() {
           <Text style={styles.eyebrow}>GUTA COSMETIC</Text>
           <Text style={styles.title}>Quản lý chi nhánh</Text>
           <Text style={styles.subtitle}>
-            {user?.fullName} · Ca làm hôm nay
+            {user?.fullName} · {activeStore?.name || "Chưa chọn chi nhánh"}
           </Text>
         </View>
-        <Pressable onPress={logout} style={styles.iconButton}>
-          <Ionicons color="#252525" name="log-out-outline" size={21} />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            onPress={() => router.push("/staff/select-store")}
+            style={styles.iconButton}
+          >
+            <Ionicons color="#252525" name="storefront-outline" size={20} />
+          </Pressable>
+          <Pressable onPress={logout} style={styles.iconButton}>
+            <Ionicons color="#252525" name="log-out-outline" size={21} />
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView
@@ -299,6 +314,10 @@ const styles = StyleSheet.create({
   headerCopy: {
     flex: 1,
     paddingRight: 12,
+  },
+  headerActions: {
+    flexDirection: "row",
+    gap: 8,
   },
   eyebrow: {
     color: "#60716a",

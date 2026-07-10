@@ -4,7 +4,7 @@ import { useAuth } from "@/contexts/AuthContext";
 import { getHomeRouteForRole } from "@/utils/roleNavigation";
 
 export default function ManagerLayout() {
-  const { isLoading, user } = useAuth();
+  const { activeStore, isLoading, user } = useAuth();
 
   if (!isLoading && !user) {
     return <Redirect href="/auth/login" />;
@@ -12,6 +12,10 @@ export default function ManagerLayout() {
 
   if (!isLoading && user?.role !== "MANAGER") {
     return <Redirect href={getHomeRouteForRole(user?.role)} />;
+  }
+
+  if (!isLoading && user?.role === "MANAGER" && !activeStore) {
+    return <Redirect href="/staff/select-store" />;
   }
 
   if (isLoading || !user) {
