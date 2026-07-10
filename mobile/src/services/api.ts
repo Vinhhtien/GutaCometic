@@ -1,5 +1,8 @@
 import Constants from "expo-constants";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { Platform } from "react-native";
+import { ACTIVE_STORE_STORAGE_KEY } from "@/constants/session";
+import { Store } from "@/types/store";
 
 const getMetroApiUrl = () => {
   if (Platform.OS === "web") {
@@ -48,12 +51,18 @@ export async function apiRequest<T>(
   path: string,
   { body, headers, token, ...options }: ApiOptions = {}
 ): Promise<T> {
+  const storedActiveStore = await AsyncStorage.getItem(ACTIVE_STORE_STORAGE_KEY);
+  const activeStore = storedActiveStore
+    ? (JSON.parse(storedActiveStore) as Store)
+    : null;
+
   const response = await fetch(`${API_BASE_URL}${path}`, {
     ...options,
     headers: {
       Accept: "application/json",
       "Content-Type": "application/json",
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      ...(activeStore?._id ? { "X-Active-Store-Id": activeStore._id } : {}),
       ...headers,
     },
     body: body === undefined ? undefined : JSON.stringify(body),

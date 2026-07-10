@@ -18,7 +18,23 @@ const updateProfile = async (req, res, next) => {
   }
 };
 
+const redeemCustomerPoints = async (req, res, next) => {
+  try {
+    const result = await userService.redeemCustomerPoints({
+      customerId: req.params.customerId,
+      manager: req.user,
+      note: req.body.note,
+      points: req.body.points,
+      rewardName: req.body.rewardName,
+    });
+    res.status(201).json(result);
+  } catch (error) {
+    next(error);
+  }
+};
+
 module.exports = {
+  redeemCustomerPoints,
   searchCustomers,
   updateProfile,
 };

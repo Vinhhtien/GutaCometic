@@ -5,17 +5,21 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  KeyboardAvoidingView,
   Modal,
+  Platform,
   Pressable,
   RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/contexts/AuthContext";
 import { getErrorMessage } from "@/services/api";
+import { redeemCustomerPoints } from "@/services/customerService";
 import {
   createPosPayosPaymentLink,
   getOrders,
@@ -30,11 +34,17 @@ const formatCurrency = (value: number) =>
 const getCustomerLabel = (order: Order) =>
   order.customerName || order.customerPhone || "Khách lẻ tại quầy";
 
+const getRegisteredCustomer = (order: Order) =>
+  order.customerId && typeof order.customerId === "object"
+    ? order.customerId
+    : null;
+
 export default function ManagerPosPaymentScreen() {
-  const { token } = useAuth();
+  const { activeStore, token } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
   const [detailOrder, setDetailOrder] = useState<Order | null>(null);
+  const [rewardOrder, setRewardOrder] = useState<Order | null>(null);
   const [paymentLink, setPaymentLink] = useState<PaymentLink | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -42,6 +52,12 @@ export default function ManagerPosPaymentScreen() {
     null
   );
   const [isQrVisible, setIsQrVisible] = useState(false);
+  const [discountByOrder, setDiscountByOrder] = useState<Record<string, string>>(
+    {}
+  );
+  const [rewardName, setRewardName] = useState("");
+  const [rewardNote, setRewardNote] = useState("");
+  const [rewardPoints, setRewardPoints] = useState("");
 
   const loadOrders = useCallback(
     async (mode: "initial" | "refresh" = "initial") => {
@@ -96,7 +112,9 @@ export default function ManagerPosPaymentScreen() {
 
     try {
       setProcessingOrderId(order._id);
-      await payOfflineOrder(token, order._id, "CASH");
+      await payOfflineOrder(token, order._id, "CASH", {
+        discountPercent: Number(discountByOrder[order._id] || 0),
+      });
       removeCompletedOrder(order._id);
       Alert.alert("Đã thanh toán", "Đơn tại quầy đã hoàn tất bằng tiền mặt.");
     } catch (error) {
@@ -116,11 +134,72 @@ export default function ManagerPosPaymentScreen() {
       setPaymentLink(null);
       setIsQrVisible(true);
       setProcessingOrderId(order._id);
-      const payment = await createPosPayosPaymentLink(token, order._id);
+      const payment = await createPosPayosPaymentLink(token, order._id, {
+        discountPercent: Number(discountByOrder[order._id] || 0),
+      });
       setPaymentLink(payment);
     } catch (error) {
       setIsQrVisible(false);
       Alert.alert("Không tạo được mã QR", getErrorMessage(error));
+    } finally {
+      setProcessingOrderId(null);
+    }
+  };
+
+  const openRewardModal = (order: Order) => {
+    setRewardOrder(order);
+    setRewardName("");
+    setRewardNote("");
+    setRewardPoints("");
+  };
+
+  const handleRedeemReward = async () => {
+    if (!token || !rewardOrder) {
+      return;
+    }
+
+    const customer = getRegisteredCustomer(rewardOrder);
+    const points = Number(rewardPoints || 0);
+
+    if (!customer) {
+      Alert.alert("Không thể đổi quà", "Đơn này chưa gắn khách thành viên.");
+      return;
+    }
+
+    if (!rewardName.trim() || !Number.isInteger(points) || points <= 0) {
+      Alert.alert("Thiếu thông tin", "Nhập tên quà và số điểm cần trừ.");
+      return;
+    }
+
+    try {
+      setProcessingOrderId(rewardOrder._id);
+      const result = await redeemCustomerPoints(token, customer._id, {
+        note: rewardNote,
+        points,
+        rewardName,
+      });
+
+      setOrders((current) =>
+        current.map((order) => {
+          const orderCustomer = getRegisteredCustomer(order);
+
+          if (!orderCustomer || orderCustomer._id !== result.customer._id) {
+            return order;
+          }
+
+          return {
+            ...order,
+            customerId: {
+              ...orderCustomer,
+              points: result.customer.points,
+            },
+          };
+        })
+      );
+      setRewardOrder(null);
+      Alert.alert("Đã đổi quà", "Điểm tích lũy của khách đã được trừ.");
+    } catch (error) {
+      Alert.alert("Không đổi được quà", getErrorMessage(error));
     } finally {
       setProcessingOrderId(null);
     }
@@ -162,8 +241,11 @@ export default function ManagerPosPaymentScreen() {
           <Ionicons color="#252525" name="arrow-back" size={22} />
         </Pressable>
         <View style={styles.headerCopy}>
-          <Text style={styles.eyebrow}>THU NGÂN TẠI QUẦY</Text>
+          <Text style={styles.eyebrow}>THU NGN TI QUY</Text>
           <Text style={styles.title}>Thanh toán đơn từ Sales</Text>
+          <Text style={styles.subtitle}>
+            {activeStore?.name || "Chưa chọn chi nhánh"}
+          </Text>
         </View>
       </View>
 
@@ -210,9 +292,19 @@ export default function ManagerPosPaymentScreen() {
             <OrderCard
               key={order._id}
               isProcessing={processingOrderId === order._id}
+              discountValue={discountByOrder[order._id] || ""}
               onCashPayment={() => handleCashPayment(order)}
+              onChangeDiscount={(value) =>
+                setDiscountByOrder((current) => ({
+                  ...current,
+                  [order._id]: String(
+                    Math.min(100, Number(value.replace(/[^0-9]/g, "") || 0))
+                  ),
+                }))
+              }
               onOpenDetail={() => setDetailOrder(order)}
               onQrPayment={() => handleOpenQr(order)}
+              onRedeemReward={() => openRewardModal(order)}
               order={order}
             />
           ))
@@ -297,23 +389,52 @@ export default function ManagerPosPaymentScreen() {
         order={detailOrder}
         onClose={() => setDetailOrder(null)}
       />
+
+      <RewardRedemptionModal
+        isProcessing={processingOrderId === rewardOrder?._id}
+        note={rewardNote}
+        onChangeNote={setRewardNote}
+        onChangePoints={(value) =>
+          setRewardPoints(value.replace(/[^0-9]/g, ""))
+        }
+        onChangeRewardName={setRewardName}
+        onClose={() => setRewardOrder(null)}
+        onConfirm={handleRedeemReward}
+        order={rewardOrder}
+        points={rewardPoints}
+        rewardName={rewardName}
+      />
     </SafeAreaView>
   );
 }
 
 function OrderCard({
+  discountValue,
   isProcessing,
+  onChangeDiscount,
   onCashPayment,
   onOpenDetail,
   onQrPayment,
+  onRedeemReward,
   order,
 }: {
+  discountValue: string;
   isProcessing: boolean;
+  onChangeDiscount: (value: string) => void;
   onCashPayment: () => void;
   onOpenDetail: () => void;
   onQrPayment: () => void;
+  onRedeemReward: () => void;
   order: Order;
 }) {
+  const registeredCustomer = getRegisteredCustomer(order);
+  const discountPercent = Math.min(100, Number(discountValue || 0));
+  const discountAmount = Math.floor((order.totalPrice * discountPercent) / 100);
+  const payableAmount = Math.max(0, order.totalPrice - discountAmount);
+  const pointsEarnedPreview = registeredCustomer
+    ? Math.floor(payableAmount / 10000)
+    : 0;
+
   return (
     <View style={styles.orderCard}>
       <View style={styles.orderHeader}>
@@ -338,6 +459,50 @@ function OrderCard({
             <Text style={styles.itemQty}>x{item.quantity}</Text>
           </View>
         ))}
+      </View>
+
+      <View style={styles.posAdjustmentBox}>
+        <View style={styles.adjustmentInputGroup}>
+          <Text style={styles.adjustmentLabel}>Giảm giá (%)</Text>
+          <TextInput
+            keyboardType="number-pad"
+            onChangeText={onChangeDiscount}
+            placeholder="0%"
+            placeholderTextColor="#8a948f"
+            style={styles.adjustmentInput}
+            value={discountValue}
+          />
+          <Text style={styles.adjustmentHint}>
+            Giảm {formatCurrency(discountAmount)}
+          </Text>
+        </View>
+        <View style={styles.rewardInfoBox}>
+          <Text style={styles.adjustmentLabel}>Điểm thưởng</Text>
+          <Text style={styles.rewardPoints}>
+            {registeredCustomer
+              ? `${registeredCustomer.points} điểm`
+              : "Khách vãng lai"}
+          </Text>
+          <Text style={styles.adjustmentHint}>
+            {registeredCustomer
+              ? `Dự kiến cộng +${pointsEarnedPreview} điểm`
+              : "Nhập khách thành viên từ Sales để tích điểm"}
+          </Text>
+          <Pressable
+            disabled={!registeredCustomer}
+            onPress={onRedeemReward}
+            style={[
+              styles.rewardRedeemButton,
+              !registeredCustomer && styles.disabledButton,
+            ]}
+          >
+            <Text style={styles.rewardRedeemButtonText}>Đổi quà</Text>
+          </Pressable>
+        </View>
+        <View style={styles.payableBox}>
+          <Text style={styles.adjustmentLabel}>Còn thu</Text>
+          <Text style={styles.payableValue}>{formatCurrency(payableAmount)}</Text>
+        </View>
       </View>
 
       <View style={styles.actionRow}>
@@ -379,6 +544,127 @@ function OrderCard({
   );
 }
 
+function RewardRedemptionModal({
+  isProcessing,
+  note,
+  onChangeNote,
+  onChangePoints,
+  onChangeRewardName,
+  onClose,
+  onConfirm,
+  order,
+  points,
+  rewardName,
+}: {
+  isProcessing: boolean;
+  note: string;
+  onChangeNote: (value: string) => void;
+  onChangePoints: (value: string) => void;
+  onChangeRewardName: (value: string) => void;
+  onClose: () => void;
+  onConfirm: () => void;
+  order: Order | null;
+  points: string;
+  rewardName: string;
+}) {
+  const customer = order ? getRegisteredCustomer(order) : null;
+  const requestedPoints = Number(points || 0);
+  const remainingPoints = customer
+    ? Math.max(0, customer.points - requestedPoints)
+    : 0;
+
+  return (
+    <Modal
+      animationType="slide"
+      transparent
+      visible={Boolean(order)}
+      onRequestClose={onClose}
+    >
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.modalBackdrop}
+      >
+        <View style={styles.rewardSheet}>
+          <ScrollView
+            contentContainerStyle={styles.rewardSheetContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+          <View style={styles.sheetHeader}>
+            <View>
+              <Text style={styles.sheetTitle}>Đổi quà bằng điểm</Text>
+              <Text style={styles.sheetSubtitle}>
+                Trừ điểm tích lũy khi khách đổi quà tại cửa hàng.
+              </Text>
+            </View>
+            <Pressable onPress={onClose} style={styles.closeButton}>
+              <Ionicons color="#252525" name="close" size={22} />
+            </Pressable>
+          </View>
+
+          {customer ? (
+            <>
+              <View style={styles.rewardCustomerBox}>
+                <Text style={styles.customerName}>{customer.fullName}</Text>
+                <Text style={styles.customerPhone}>
+                  {customer.phone || customer.email || "Khách thành viên"}
+                </Text>
+                <Text style={styles.rewardBalance}>
+                  Hiện có {customer.points} điểm
+                </Text>
+              </View>
+
+              <TextInput
+                onChangeText={onChangeRewardName}
+                placeholder="Tên quà đổi, ví dụ: Bông tẩy trang mini"
+                placeholderTextColor="#8a948f"
+                style={styles.rewardInput}
+                value={rewardName}
+              />
+              <TextInput
+                keyboardType="number-pad"
+                onChangeText={onChangePoints}
+                placeholder="Số điểm cần trừ"
+                placeholderTextColor="#8a948f"
+                style={styles.rewardInput}
+                value={points}
+              />
+              <TextInput
+                multiline
+                onChangeText={onChangeNote}
+                placeholder="Ghi chú"
+                placeholderTextColor="#8a948f"
+                style={[styles.rewardInput, styles.rewardNoteInput]}
+                value={note}
+              />
+              <View style={styles.rewardSummaryRow}>
+                <Text style={styles.adjustmentLabel}>Sau đổi quà</Text>
+                <Text style={styles.rewardPoints}>{remainingPoints} điểm</Text>
+              </View>
+              <Pressable
+                disabled={isProcessing}
+                onPress={onConfirm}
+                style={[styles.primaryButton, isProcessing && styles.disabledButton]}
+              >
+                {isProcessing ? (
+                  <ActivityIndicator color="#ffffff" />
+                ) : (
+                  <Text style={styles.primaryButtonText}>Xác nhận trừ điểm</Text>
+                )}
+              </Pressable>
+            </>
+          ) : (
+            <Text style={styles.emptyText}>
+              Chỉ khách thành viên mới có thể đổi quà bằng điểm.
+            </Text>
+          )}
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
 function OrderDetailModal({
   onClose,
   order,
@@ -386,6 +672,8 @@ function OrderDetailModal({
   onClose: () => void;
   order: Order | null;
 }) {
+  const registeredCustomer = order ? getRegisteredCustomer(order) : null;
+
   return (
     <Modal
       animationType="slide"
@@ -413,6 +701,14 @@ function OrderDetailModal({
                 <InfoRow label="Mã đơn" value={order.orderCode || order._id} />
                 <InfoRow label="Khách hàng" value={getCustomerLabel(order)} />
                 <InfoRow label="Số điện thoại" value={order.customerPhone || "-"} />
+                <InfoRow
+                  label="Điểm thưởng"
+                  value={
+                    registeredCustomer
+                      ? `${registeredCustomer.points} điểm`
+                      : "Khách vãng lai"
+                  }
+                />
                 <InfoRow label="Tổng tiền" value={formatCurrency(order.totalPrice)} />
               </View>
 
@@ -491,6 +787,12 @@ const styles = StyleSheet.create({
     color: "#1f2522",
     fontSize: 24,
     fontWeight: "900",
+  },
+  subtitle: {
+    marginTop: 3,
+    color: "#69756f",
+    fontSize: 13,
+    fontWeight: "700",
   },
   content: {
     paddingHorizontal: 18,
@@ -623,6 +925,82 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "900",
   },
+  posAdjustmentBox: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 12,
+  },
+  adjustmentInputGroup: {
+    flex: 1,
+    minHeight: 58,
+    justifyContent: "center",
+    paddingHorizontal: 9,
+    borderRadius: 8,
+    backgroundColor: "#f7f8f5",
+    borderWidth: 1,
+    borderColor: "#e2e7df",
+  },
+  adjustmentLabel: {
+    color: "#69756f",
+    fontSize: 10,
+    fontWeight: "900",
+  },
+  adjustmentInput: {
+    marginTop: 3,
+    color: "#1f2522",
+    fontSize: 14,
+    fontWeight: "900",
+    padding: 0,
+  },
+  adjustmentHint: {
+    marginTop: 2,
+    color: "#69756f",
+    fontSize: 9,
+    fontWeight: "800",
+  },
+  rewardInfoBox: {
+    flex: 1.2,
+    minHeight: 58,
+    justifyContent: "center",
+    paddingHorizontal: 9,
+    borderRadius: 8,
+    backgroundColor: "#fff7eb",
+    borderWidth: 1,
+    borderColor: "#eddab5",
+  },
+  rewardPoints: {
+    marginTop: 3,
+    color: "#9a6b13",
+    fontSize: 13,
+    fontWeight: "900",
+  },
+  rewardRedeemButton: {
+    minHeight: 28,
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 6,
+    borderRadius: 7,
+    backgroundColor: "#9a6b13",
+  },
+  rewardRedeemButtonText: {
+    color: "#ffffff",
+    fontSize: 11,
+    fontWeight: "900",
+  },
+  payableBox: {
+    flex: 1,
+    minHeight: 58,
+    justifyContent: "center",
+    paddingHorizontal: 9,
+    borderRadius: 8,
+    backgroundColor: "#eef4ef",
+  },
+  payableValue: {
+    marginTop: 3,
+    color: "#2d5a4b",
+    fontSize: 13,
+    fontWeight: "900",
+  },
   actionRow: {
     flexDirection: "row",
     gap: 10,
@@ -695,6 +1073,59 @@ const styles = StyleSheet.create({
     borderTopLeftRadius: 18,
     borderTopRightRadius: 18,
     backgroundColor: "#ffffff",
+  },
+  rewardSheet: {
+    maxHeight: "88%",
+    padding: 18,
+    paddingBottom: 28,
+    borderTopLeftRadius: 18,
+    borderTopRightRadius: 18,
+    backgroundColor: "#ffffff",
+  },
+  rewardSheetContent: {
+    paddingBottom: 12,
+  },
+  rewardCustomerBox: {
+    marginTop: 16,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 8,
+    backgroundColor: "#fff7eb",
+    borderWidth: 1,
+    borderColor: "#eddab5",
+  },
+  rewardBalance: {
+    marginTop: 7,
+    color: "#9a6b13",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  rewardInput: {
+    minHeight: 46,
+    marginBottom: 9,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: "#f7f8f5",
+    borderWidth: 1,
+    borderColor: "#e2e7df",
+    color: "#1f2522",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  rewardNoteInput: {
+    minHeight: 78,
+    paddingTop: 12,
+    textAlignVertical: "top",
+  },
+  rewardSummaryRow: {
+    minHeight: 44,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginBottom: 10,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: "#eef4ef",
   },
   sheetHeader: {
     flexDirection: "row",

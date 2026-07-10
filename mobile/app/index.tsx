@@ -1,10 +1,11 @@
 import { ActivityIndicator, StyleSheet, View } from "react-native";
 import { Redirect } from "expo-router";
 import { useAuth } from "@/contexts/AuthContext";
+import { isStaffRole } from "@/constants/session";
 import { getHomeRouteForRole } from "@/utils/roleNavigation";
 
 export default function IndexScreen() {
-  const { isLoading, user } = useAuth();
+  const { activeStore, isLoading, user } = useAuth();
 
   if (isLoading) {
     return (
@@ -14,7 +15,15 @@ export default function IndexScreen() {
     );
   }
 
-  return <Redirect href={user ? getHomeRouteForRole(user.role) : "/auth/login"} />;
+  if (!user) {
+    return <Redirect href="/auth/login" />;
+  }
+
+  if (isStaffRole(user.role) && !activeStore) {
+    return <Redirect href="/staff/select-store" />;
+  }
+
+  return <Redirect href={getHomeRouteForRole(user.role)} />;
 }
 
 const styles = StyleSheet.create({

@@ -294,6 +294,7 @@ const completeOfflinePayosOrder = async (order, managerId = null) => {
   order.paidByManagerId = managerId || order.paidByManagerId || null;
   order.paidAt = order.paidAt || new Date();
   order.completedAt = order.completedAt || new Date();
+  await orderService.awardCustomerPoints(order);
   order.status = ORDER_STATUSES.COMPLETED;
   order.statusHistory.push({
     status: ORDER_STATUSES.COMPLETED,
@@ -304,7 +305,7 @@ const completeOfflinePayosOrder = async (order, managerId = null) => {
   return order;
 };
 
-const createPosPayosPaymentLink = async (orderId, manager) => {
+const createPosPayosPaymentLink = async (orderId, manager, options = {}) => {
   const order = await Order.findById(orderId);
 
   if (!order) {
@@ -317,15 +318,36 @@ const createPosPayosPaymentLink = async (orderId, manager) => {
     return buildPaymentResponse(order);
   }
 
+  const discountPercent = Math.max(
+    0,
+    Math.min(100, Number(options.discountPercent || 0))
+  );
+  const maxDiscountAmount = order.subtotal + order.shippingFee;
+  order.discountAmount = Math.min(
+    maxDiscountAmount,
+    Math.floor((maxDiscountAmount * discountPercent) / 100)
+  );
+  order.pointsUsed = 0;
+  const payableAmount = Math.max(
+    0,
+    order.subtotal + order.shippingFee - order.discountAmount
+  );
+
   const { config, payOS } = createPayOSClient();
   const paymentOrderCode = getNextPaymentOrderCode(order);
   const expiredAt = Math.floor(Date.now() / 1000) + PAYOS_PAYMENT_TTL_SECONDS;
 
   const paymentData = {
     orderCode: paymentOrderCode,
-    amount: order.totalPrice,
+    amount: payableAmount,
     description: compactDescription(order),
-    items: order.items.map(mapPayosItem),
+    items: [
+      {
+        name: `POS ${String(order.orderCode).slice(-12)}`.slice(0, 100),
+        quantity: 1,
+        price: payableAmount,
+      },
+    ],
     returnUrl: config.returnUrl,
     cancelUrl: config.cancelUrl,
     expiredAt,

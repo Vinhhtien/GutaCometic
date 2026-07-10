@@ -36,7 +36,10 @@ const createPosPayosPaymentLink = async (req, res, next) => {
   try {
     const payment = await payosService.createPosPayosPaymentLink(
       req.params.orderId,
-      req.user
+      req.user,
+      {
+        discountPercent: req.body.discountPercent,
+      }
     );
     res.status(201).json({ payment });
   } catch (error) {

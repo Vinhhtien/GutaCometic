@@ -22,6 +22,11 @@ const inventoryRequestSchema = new mongoose.Schema(
       ref: "User",
       default: null,
     },
+    acknowledgedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
     currentAvailableStock: {
       type: Number,
       required: true,
@@ -50,6 +55,10 @@ const inventoryRequestSchema = new mongoose.Schema(
       default: "",
     },
     resolvedAt: {
+      type: Date,
+      default: null,
+    },
+    acknowledgedAt: {
       type: Date,
       default: null,
     },

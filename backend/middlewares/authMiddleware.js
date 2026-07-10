@@ -1,5 +1,7 @@
 const jwt = require("jsonwebtoken");
 const authService = require("../modules/auth/services/authService");
+const Store = require("../models/Store");
+const { USER_ROLES } = require("../constants/business");
 
 const protect = async (req, res, next) => {
   try {
@@ -15,6 +17,28 @@ const protect = async (req, res, next) => {
 
     if (!user || !user.isActive) {
       return res.status(401).json({ message: "User is unavailable" });
+    }
+
+    const activeStoreId = req.headers["x-active-store-id"];
+    const isStoreStaff = [USER_ROLES.MANAGER, USER_ROLES.SALES].includes(
+      user.role
+    );
+
+    if (isStoreStaff && activeStoreId) {
+      const activeStore = await Store.findOne({
+        _id: activeStoreId,
+        isActive: true,
+      }).lean();
+
+      if (!activeStore) {
+        return res.status(403).json({
+          code: "ACTIVE_STORE_INVALID",
+          message: "Chi nhánh đang làm việc không hợp lệ hoặc đã bị khóa",
+        });
+      }
+
+      user.storeId = activeStore._id;
+      req.activeStore = activeStore;
     }
 
     const passwordChangedAtSeconds = user.passwordChangedAt

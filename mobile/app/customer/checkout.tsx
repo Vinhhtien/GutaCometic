@@ -23,7 +23,9 @@ import {
   createOnlineOrder,
   syncPayosPaymentStatus,
 } from "@/services/orderService";
+import { getProductInventory } from "@/services/inventoryService";
 import { getStores } from "@/services/storeService";
+import { ProductInventory } from "@/types/inventory";
 import { Order, PaymentLink, PaymentMethod } from "@/types/order";
 import { Store } from "@/types/store";
 
@@ -61,6 +63,8 @@ export default function CheckoutScreen() {
   const [stores, setStores] = useState<Store[]>([]);
   const [isLoadingStores, setIsLoadingStores] = useState(true);
   const [storesError, setStoresError] = useState("");
+  const [inventory, setInventory] = useState<ProductInventory[]>([]);
+  const [inventoryError, setInventoryError] = useState("");
   const [selectedStoreId, setSelectedStoreId] = useState("");
 
   const [recipientName, setRecipientName] = useState(user?.fullName ?? "");
@@ -83,26 +87,111 @@ export default function CheckoutScreen() {
     [stores, selectedStoreId]
   );
 
-  const loadStores = useCallback(async () => {
+  const stockByStore = useMemo(() => {
+    const map = new Map<
+      string,
+      {
+        available: boolean;
+        missing: { available: number; name: string; requested: number }[];
+      }
+    >();
+
+    stores.forEach((store) => {
+      const missing = items.flatMap((cartItem) => {
+        const productInventory = inventory.find(
+          (item) => item.product._id === cartItem.productId
+        );
+        const storeInventory = productInventory?.inventories.find(
+          (item) => item.store._id === store._id
+        );
+        const available = storeInventory?.availableStock || 0;
+
+        return available >= cartItem.quantity
+          ? []
+          : [
+              {
+                available,
+                name: cartItem.name,
+                requested: cartItem.quantity,
+              },
+            ];
+      });
+
+      map.set(store._id, {
+        available: missing.length === 0,
+        missing,
+      });
+    });
+
+    return map;
+  }, [inventory, items, stores]);
+
+  const firstAvailableStore = useMemo(
+    () => stores.find((store) => stockByStore.get(store._id)?.available) ?? null,
+    [stockByStore, stores]
+  );
+
+  const selectedStoreStock = selectedStoreId
+    ? stockByStore.get(selectedStoreId)
+    : null;
+
+  const loadCheckoutData = useCallback(async () => {
     if (!token) {
       return;
     }
 
     try {
       setStoresError("");
-      const response = await getStores(token);
-      setStores(response);
-      setSelectedStoreId((current) => current || response[0]?._id || "");
+      setInventoryError("");
+      const [storeResponse, inventoryResponse] = await Promise.all([
+        getStores(token),
+        items.length
+          ? getProductInventory(token, {
+              productIds: items.map((item) => item.productId),
+            })
+          : Promise.resolve([]),
+      ]);
+
+      setStores(storeResponse);
+      setInventory(inventoryResponse);
     } catch (requestError) {
-      setStoresError(getErrorMessage(requestError));
+      const message = getErrorMessage(requestError);
+      setStoresError(message);
+      setInventoryError(message);
     } finally {
       setIsLoadingStores(false);
     }
-  }, [token]);
+  }, [items, token]);
 
   useEffect(() => {
-    loadStores();
-  }, [loadStores]);
+    loadCheckoutData();
+  }, [loadCheckoutData]);
+
+  useEffect(() => {
+    if (stores.length === 0 || inventory.length === 0) {
+      return;
+    }
+
+    if (isDelivery) {
+      setSelectedStoreId(firstAvailableStore?._id || "");
+      return;
+    }
+
+    const selectedStock = selectedStoreId
+      ? stockByStore.get(selectedStoreId)
+      : null;
+
+    if (!selectedStoreId || selectedStock?.available === false) {
+      setSelectedStoreId(firstAvailableStore?._id || "");
+    }
+  }, [
+    firstAvailableStore,
+    inventory.length,
+    isDelivery,
+    selectedStoreId,
+    stockByStore,
+    stores.length,
+  ]);
 
   useEffect(() => {
     if (!payosQr?.payment.expiredAt) {
@@ -130,6 +219,60 @@ export default function CheckoutScreen() {
 
     return `${minutes}:${seconds.toString().padStart(2, "0")}`;
   }, [remainingSeconds]);
+
+  const buildStockMessage = (
+    stock?: {
+      available: boolean;
+      missing: { available: number; name: string; requested: number }[];
+    } | null
+  ) => {
+    if (!stock || stock.available) {
+      return "";
+    }
+
+    return stock.missing
+      .map(
+        (item) =>
+          `${item.name}: cần ${item.requested}, chi nhánh còn ${item.available}`
+      )
+      .join("\n");
+  };
+
+  const ensureStockAvailable = () => {
+    if (isLoadingStores) {
+      Alert.alert(
+        "Đang kiểm tra tồn kho",
+        "Vui lòng đợi hệ thống kiểm tra tồn kho."
+      );
+      return false;
+    }
+
+    if (storesError || inventoryError) {
+      Alert.alert("Không kiểm tra được tồn kho", storesError || inventoryError);
+      return false;
+    }
+
+    if (!selectedStoreId) {
+      Alert.alert(
+        "Không có chi nhánh còn hàng",
+        "Hiện chưa có chi nhánh nào còn đủ số lượng sản phẩm trong giỏ hàng."
+      );
+      return false;
+    }
+
+    const stock = stockByStore.get(selectedStoreId);
+
+    if (!stock?.available) {
+      Alert.alert(
+        "Chi nhánh không đủ hàng",
+        buildStockMessage(stock) ||
+          "Sản phẩm trong giỏ đã hết hoặc không đủ số lượng tại chi nhánh này."
+      );
+      return false;
+    }
+
+    return true;
+  };
 
   const handleDecreaseQuantity = (item: (typeof items)[number]) => {
     if (item.quantity <= 1) {
@@ -168,9 +311,13 @@ export default function CheckoutScreen() {
       Alert.alert(
         "Chưa chọn cửa hàng",
         isDelivery
-          ? "Vui lòng chọn cửa hàng giao hàng."
-          : "Vui lòng chọn cửa hàng để nhận hàng."
+          ? "Hiện chưa có chi nhánh nào còn đủ hàng để giao."
+          : "Vui lòng chọn cửa hàng còn đủ hàng để nhận."
       );
+      return;
+    }
+
+    if (!ensureStockAvailable()) {
       return;
     }
 
@@ -190,6 +337,10 @@ export default function CheckoutScreen() {
     const effectivePaymentMethod: PaymentMethod = paymentMethod;
 
     try {
+      if (!ensureStockAvailable()) {
+        return;
+      }
+
       setIsSubmitting(true);
       const { order, payment } = await createOnlineOrder(token, {
         storeId: selectedStoreId,
@@ -438,7 +589,7 @@ export default function CheckoutScreen() {
                 </Pressable>
               </View>
 
-              {(
+              {isDelivery ? (
                 <>
                   <Text style={styles.sectionLabel}>ĐỊA CHỈ NHẬN HÀNG</Text>
                   <View style={styles.card}>
@@ -472,7 +623,7 @@ export default function CheckoutScreen() {
                     </View>
                   </View>
                 </>
-              )}
+              ) : null}
 
               <Text style={styles.sectionLabel}>
                 {isDelivery ? "CỬA HÀNG GIAO HÀNG" : "HỆ THỐNG CỬA HÀNG GUTA"}
@@ -486,15 +637,41 @@ export default function CheckoutScreen() {
                   <Text style={styles.storeErrorText}>
                     Hiện chưa có cửa hàng nào khả dụng.
                   </Text>
+                ) : isDelivery ? (
+                  <View style={styles.storeAutoBox}>
+                    <Ionicons
+                      color={selectedStoreId ? "#2d5a4b" : "#9f2639"}
+                      name={selectedStoreId ? "checkmark-circle-outline" : "alert-circle-outline"}
+                      size={22}
+                    />
+                    <View style={styles.storeTextWrap}>
+                      <Text style={styles.storeName}>
+                        {selectedStore
+                          ? `Chi nhánh xử lý: ${selectedStore.name}`
+                          : "Chưa có chi nhánh còn đủ hàng"}
+                      </Text>
+                      <Text style={styles.storeAddress}>
+                        {selectedStore
+                          ? selectedStore.address
+                          : "Vui lòng giảm số lượng hoặc chọn sản phẩm khác."}
+                      </Text>
+                    </View>
+                  </View>
                 ) : (
                   stores.map((store) => {
                     const isSelected = store._id === selectedStoreId;
+                    const storeStock = stockByStore.get(store._id);
+                    const isAvailable = Boolean(storeStock?.available);
 
                     return (
                       <Pressable
+                        disabled={!isAvailable}
                         key={store._id}
                         onPress={() => setSelectedStoreId(store._id)}
-                        style={styles.storeRow}
+                        style={[
+                          styles.storeRow,
+                          !isAvailable && styles.storeRowDisabled,
+                        ]}
                       >
                         <View
                           style={[
@@ -507,6 +684,17 @@ export default function CheckoutScreen() {
                         <View style={styles.storeTextWrap}>
                           <Text style={styles.storeName}>{store.name}</Text>
                           <Text style={styles.storeAddress}>{store.address}</Text>
+                          <Text
+                            style={[
+                              styles.storeStockText,
+                              !isAvailable && styles.storeStockTextDanger,
+                            ]}
+                          >
+                            {isAvailable
+                              ? "Còn đủ hàng trong giỏ"
+                              : buildStockMessage(storeStock) ||
+                                "Chi nhánh này đã hết hoặc không đủ hàng"}
+                          </Text>
                         </View>
                       </Pressable>
                     );
@@ -535,6 +723,9 @@ export default function CheckoutScreen() {
                         </Text>
                         <Text style={styles.summaryLineMuted}>
                           {addressLine.trim()}
+                        </Text>
+                        <Text style={styles.summaryLineMuted}>
+                          Chi nhánh xử lý: {selectedStore?.name || "Tự động chọn"}
                         </Text>
                       </>
                     ) : (
@@ -980,6 +1171,15 @@ const styles = StyleSheet.create({
     gap: 12,
     paddingVertical: 14,
   },
+  storeRowDisabled: {
+    opacity: 0.62,
+  },
+  storeAutoBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 12,
+    paddingVertical: 14,
+  },
   radioOuter: {
     width: 20,
     height: 20,
@@ -1010,6 +1210,15 @@ const styles = StyleSheet.create({
     marginTop: 2,
     color: "#8c8e8a",
     fontSize: 12,
+  },
+  storeStockText: {
+    marginTop: 5,
+    color: "#2d5a4b",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  storeStockTextDanger: {
+    color: "#9f2639",
   },
   paymentOptionRow: {
     flexDirection: "row",

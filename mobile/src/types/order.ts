@@ -21,25 +21,48 @@ export type OrderStoreSummary = {
   phone?: string;
 };
 
+export type OrderCustomerSummary = {
+  _id: string;
+  fullName: string;
+  email?: string;
+  phone?: string;
+  points: number;
+};
+
 export type Order = {
   _id: string;
   orderCode: string;
   channel: string;
   fulfillmentType: string;
   storeId: string | OrderStoreSummary;
+  customerId?: string | OrderCustomerSummary | null;
   customerName?: string;
   customerPhone?: string;
   items: OrderItem[];
   subtotal: number;
+  discountAmount?: number;
   shippingFee: number;
+  pointsUsed?: number;
+  pointsEarned?: number;
   totalPrice: number;
   status: string;
   paymentStatus: string;
   paymentMethod: string | null;
+  paymentProvider?: string | null;
+  paymentOrderCode?: number;
+  paymentLinkId?: string;
+  paymentReference?: string;
+  paymentProviderUpdatedAt?: string | null;
+  paymentExpiresAt?: string | null;
   checkoutUrl?: string;
+  qrCode?: string;
   shippingAddress: ShippingAddress | null;
   isReviewed: boolean;
+  paidAt?: string | null;
+  completedAt?: string | null;
+  cancelledAt?: string | null;
   createdAt: string;
+  updatedAt?: string;
 };
 
 export type PaymentMethod = "COD" | "BANK_TRANSFER";
@@ -50,6 +73,10 @@ export type PaymentLink = {
   paymentLinkId?: string;
   qrImage?: string | null;
   qrCode?: string;
+};
+
+export type PosPaymentOptions = {
+  discountPercent?: number;
 };
 
 export type CreateOnlineOrderPayload = {

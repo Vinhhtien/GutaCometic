@@ -59,7 +59,7 @@ const secondaryActions: ActionItem[] = [
 ];
 
 export default function SalesHomeScreen() {
-  const { logout, token, user } = useAuth();
+  const { activeStore, logout, token, user } = useAuth();
   const [orders, setOrders] = useState<Order[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -102,11 +102,21 @@ export default function SalesHomeScreen() {
         <View style={styles.headerCopy}>
           <Text style={styles.eyebrow}>SALES DASHBOARD</Text>
           <Text style={styles.title}>Nhân viên tại quầy</Text>
-          <Text style={styles.subtitle}>{user?.fullName} · Tư vấn bán hàng</Text>
+          <Text style={styles.subtitle}>
+            {user?.fullName} · {activeStore?.name || "Chưa chọn chi nhánh"}
+          </Text>
         </View>
-        <Pressable onPress={logout} style={styles.iconButton}>
-          <Ionicons color="#252525" name="log-out-outline" size={21} />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable
+            onPress={() => router.push("/staff/select-store")}
+            style={styles.iconButton}
+          >
+            <Ionicons color="#252525" name="storefront-outline" size={20} />
+          </Pressable>
+          <Pressable onPress={logout} style={styles.iconButton}>
+            <Ionicons color="#252525" name="log-out-outline" size={21} />
+          </Pressable>
+        </View>
       </View>
 
       <ScrollView
@@ -200,6 +210,7 @@ const styles = StyleSheet.create({
     paddingBottom: 14,
   },
   headerCopy: { flex: 1, paddingRight: 12 },
+  headerActions: { flexDirection: "row", gap: 8 },
   eyebrow: { color: "#60716a", fontSize: 11, fontWeight: "900" },
   title: {
     marginTop: 3,

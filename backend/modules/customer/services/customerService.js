@@ -1,5 +1,6 @@
 const User = require("../../../models/User");
 const Order = require("../../../models/Order");
+const RewardRedemption = require("../../../models/RewardRedemption");
 const AppError = require("../../../utils/AppError");
 const {
   USER_ROLES,
@@ -111,7 +112,72 @@ const updateProfile = async (userId, payload) => {
   return user.toJSON();
 };
 
+const redeemCustomerPoints = async ({ customerId, manager, note, points, rewardName }) => {
+  const pointsUsed = Number.parseInt(points, 10);
+  const normalizedRewardName = String(rewardName || "").trim();
+
+  if (!Number.isInteger(pointsUsed) || pointsUsed <= 0) {
+    throw new AppError(
+      "Points used must be a positive number",
+      400,
+      "INVALID_POINTS_USED"
+    );
+  }
+
+  if (!normalizedRewardName) {
+    throw new AppError(
+      "Reward name is required",
+      400,
+      "REWARD_NAME_REQUIRED"
+    );
+  }
+
+  if (!manager.storeId) {
+    throw new AppError(
+      "Manager account is not assigned to a store",
+      403,
+      "STORE_ASSIGNMENT_REQUIRED"
+    );
+  }
+
+  const customer = await User.findOne({
+    _id: customerId,
+    role: USER_ROLES.CUSTOMER,
+    isActive: true,
+  });
+
+  if (!customer) {
+    throw new AppError("Customer was not found", 404, "CUSTOMER_NOT_FOUND");
+  }
+
+  if (customer.points < pointsUsed) {
+    throw new AppError(
+      "Customer does not have enough points",
+      409,
+      "INSUFFICIENT_POINTS"
+    );
+  }
+
+  customer.points -= pointsUsed;
+  await customer.save();
+
+  const redemption = await RewardRedemption.create({
+    customerId: customer._id,
+    storeId: manager.storeId,
+    redeemedBy: manager._id,
+    rewardName: normalizedRewardName,
+    pointsUsed,
+    note: String(note || "").trim(),
+  });
+
+  return {
+    customer: customer.toJSON(),
+    redemption,
+  };
+};
+
 module.exports = {
+  redeemCustomerPoints,
   searchCustomers,
   updateProfile,
 };

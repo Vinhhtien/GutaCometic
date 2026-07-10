@@ -46,7 +46,10 @@ const payOfflineOrder = async (req, res, next) => {
     const order = await orderService.payOfflineOrder(
       req.params.orderId,
       req.body.paymentMethod,
-      req.user
+      req.user,
+      {
+        discountPercent: req.body.discountPercent,
+      }
     );
     res.json({ order });
   } catch (error) {

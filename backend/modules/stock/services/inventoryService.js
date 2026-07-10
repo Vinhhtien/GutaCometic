@@ -71,7 +71,7 @@ const assertAvailableStock = async (storeId, items, session) => {
 
   if (shortages.length > 0) {
     throw new AppError(
-      "One or more products do not have enough available stock",
+      "Một hoặc nhiều sản phẩm đã hết hàng hoặc không đủ số lượng tại chi nhánh đã chọn",
       409,
       "INSUFFICIENT_STOCK",
       shortages
@@ -117,8 +117,10 @@ const updateEachItem = async ({
   return normalizedItems;
 };
 
-const reserveStock = (storeId, items, session) =>
-  updateEachItem({
+const reserveStock = async (storeId, items, session) => {
+  await assertAvailableStock(storeId, items, session);
+
+  return updateEachItem({
     storeId,
     items,
     session,
@@ -132,8 +134,10 @@ const reserveStock = (storeId, items, session) =>
       },
     }),
     errorCode: "INSUFFICIENT_STOCK",
-    errorMessage: "Unable to reserve the requested stock",
+    errorMessage:
+      "Sản phẩm đã hết hoặc không đủ số lượng tại chi nhánh đã chọn",
   });
+};
 
 const releaseReservedStock = (storeId, items, session) =>
   updateEachItem({
@@ -207,6 +211,25 @@ const receiveStock = (storeId, items, session) =>
     errorMessage: "Inventory record was not found for this product",
   });
 
+const writeOffStock = (storeId, items, session) =>
+  updateEachItem({
+    storeId,
+    items,
+    session,
+    buildFilter: ({ quantity }) => ({
+      availableStock: { $gte: quantity },
+      totalStock: { $gte: quantity },
+    }),
+    buildUpdate: ({ quantity }) => ({
+      $inc: {
+        totalStock: -quantity,
+        availableStock: -quantity,
+      },
+    }),
+    errorCode: "INSUFFICIENT_STOCK",
+    errorMessage: "Unable to write off stock because available stock is insufficient",
+  });
+
 module.exports = {
   assertAvailableStock,
   completeImmediateSale,
@@ -215,4 +238,5 @@ module.exports = {
   receiveStock,
   releaseReservedStock,
   reserveStock,
+  writeOffStock,
 };
