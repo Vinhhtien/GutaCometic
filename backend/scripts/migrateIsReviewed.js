@@ -4,9 +4,10 @@
  */
 require("dotenv").config();
 const mongoose = require("mongoose");
+const connectDatabase = require("../config/db");
 
 async function migrate() {
-  await mongoose.connect(process.env.MONGODB_URI);
+  await connectDatabase();
   console.log("✅ Đã kết nối MongoDB");
 
   const result = await mongoose.connection

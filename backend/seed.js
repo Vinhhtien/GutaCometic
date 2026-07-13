@@ -243,6 +243,7 @@ const seed = async () => {
       await Review.insertMany(
         reviewsForProduct.map((review) => ({
           ...review,
+          orderId: new mongoose.Types.ObjectId(),
           productId: savedProduct._id,
         }))
       );

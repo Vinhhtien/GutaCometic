@@ -1,10 +1,11 @@
 require("dotenv").config();
 
 const mongoose = require("mongoose");
+const connectDatabase = require("../config/db");
 const User = require("../models/User");
 
 const main = async () => {
-  await mongoose.connect(process.env.MONGODB_URI);
+  await connectDatabase();
   const result = await User.syncIndexes();
   console.log(`User indexes synchronized. Dropped: ${result.join(", ") || "none"}`);
 };

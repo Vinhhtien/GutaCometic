@@ -57,9 +57,10 @@ export const getProductInventory = async (
   return response.products;
 };
 
-export const getInventoryAlerts = async (token: string) => {
+export const getInventoryAlerts = async (token: string, storeId?: string) => {
+  const query = storeId ? `?storeId=${storeId}` : "";
   const response = await apiRequest<{ alerts: InventoryAlert[] }>(
-    "/inventory/alerts",
+    `/inventory/alerts${query}`,
     { token }
   );
 
@@ -160,6 +161,7 @@ export const receiveDirectStock = async (
     note?: string;
     productId: string;
     quantity: number;
+    storeId?: string;
   }
 ) => {
   const response = await apiRequest<{
@@ -177,18 +179,23 @@ export const receiveDirectStock = async (
   return response.receipt;
 };
 
-export const getInventoryReceipts = async (token: string) => {
+export const getInventoryReceipts = async (token: string, storeId?: string) => {
+  const query = storeId ? `?storeId=${storeId}` : "";
   const response = await apiRequest<{ receipts: InventoryReceipt[] }>(
-    "/inventory/receipts",
+    `/inventory/receipts${query}`,
     { token }
   );
 
   return response.receipts;
 };
 
-export const getInventoryAdjustments = async (token: string) => {
+export const getInventoryAdjustments = async (
+  token: string,
+  storeId?: string
+) => {
+  const query = storeId ? `?storeId=${storeId}` : "";
   const response = await apiRequest<{ adjustments: InventoryAdjustment[] }>(
-    "/inventory/adjustments",
+    `/inventory/adjustments${query}`,
     { token }
   );
 
@@ -201,6 +208,7 @@ export const createInventoryAdjustment = async (
     note?: string;
     productId: string;
     quantity: number;
+    storeId?: string;
     type: InventoryAdjustmentType;
   }
 ) => {
@@ -216,9 +224,10 @@ export const createInventoryAdjustment = async (
   return response.adjustment;
 };
 
-export const getIncomingTransfers = async (token: string) => {
+export const getIncomingTransfers = async (token: string, storeId?: string) => {
+  const query = storeId ? `?storeId=${storeId}` : "";
   const response = await apiRequest<{ transfers: IncomingStockTransfer[] }>(
-    "/inventory/transfers/incoming",
+    `/inventory/transfers/incoming${query}`,
     { token }
   );
 

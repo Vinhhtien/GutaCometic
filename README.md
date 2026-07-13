@@ -30,16 +30,24 @@ The API runs at `http://localhost:5000`. Test it with:
 GET http://localhost:5000/api/health
 ```
 
-Order and inventory workflows use MongoDB multi-document transactions. The
-local MongoDB service runs as a single-node replica set named `rs0` on port
-`27017`. Set the backend connection in `backend/.env`:
+The backend supports both MongoDB standalone mode and replica set mode. For a
+typical local MongoDB service, set the backend connection in `backend/.env`:
+
+```env
+MONGODB_URI=mongodb://127.0.0.1:27017/guta_cosmetic_pos
+```
+
+If your MongoDB is already configured as a replica set, you can still use:
 
 ```env
 MONGODB_URI=mongodb://127.0.0.1:27017/guta_cosmetic_pos?replicaSet=rs0
 ```
 
-Change `JWT_SECRET` before using the project outside a local demo. Run
-`npm run check:transactions` to verify the replica set configuration.
+When MongoDB is running as standalone, the app will automatically fall back to
+compatibility mode instead of requiring replica set changes. Change
+`JWT_SECRET` before using the project outside a local demo. Run
+`npm run check:transactions` to see whether the current machine is using
+standalone compatibility mode or full replica set transactions.
 
 ## 2. Mobile API connection
 

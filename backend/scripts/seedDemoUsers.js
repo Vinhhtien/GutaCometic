@@ -10,6 +10,12 @@ const DEMO_PASSWORD = "Letien@0110";
 
 const demoUsers = [
   {
+    fullName: "Owner Demo",
+    email: "owner.guta.demo@gmail.com",
+    phone: "0909000000",
+    role: USER_ROLES.OWNER,
+  },
+  {
     fullName: "Manager Demo",
     email: "manager.guta.demo@gmail.com",
     phone: "0909000001",

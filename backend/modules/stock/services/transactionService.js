@@ -1,5 +1,5 @@
 const mongoose = require("mongoose");
-const AppError = require("../../../utils/AppError");
+const { getDatabaseRuntime } = require("../../../config/db");
 
 const isTransactionUnsupported = (error) =>
   error?.code === 20 ||
@@ -7,6 +7,12 @@ const isTransactionUnsupported = (error) =>
   error?.message?.includes("Transaction numbers are only allowed");
 
 const runInTransaction = async (work) => {
+  const runtime = getDatabaseRuntime();
+
+  if (runtime.transactionsSupported === false) {
+    return work(null);
+  }
+
   const session = await mongoose.startSession();
 
   try {
@@ -19,11 +25,7 @@ const runInTransaction = async (work) => {
     return result;
   } catch (error) {
     if (isTransactionUnsupported(error)) {
-      throw new AppError(
-        "MongoDB transactions require a replica set. Configure MongoDB as a single-node replica set before using order workflows.",
-        503,
-        "TRANSACTIONS_UNAVAILABLE"
-      );
+      return work(null);
     }
 
     throw error;

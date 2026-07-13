@@ -1,24 +1,27 @@
 require("dotenv").config();
 
 const mongoose = require("mongoose");
+const connectDatabase = require("../config/db");
+const { getDatabaseRuntime } = require("../config/db");
 
 const checkTransactions = async () => {
   try {
-    await mongoose.connect(process.env.MONGODB_URI);
-    const hello = await mongoose.connection.db.admin().command({ hello: 1 });
+    await connectDatabase();
+    const runtime = getDatabaseRuntime();
 
-    if (!hello.setName) {
-      console.error(
-        "MongoDB is running as standalone. Order workflows require a replica set."
+    if (!runtime.transactionsSupported) {
+      console.log(
+        "MongoDB is running in standalone mode. The project can still connect and run using compatibility mode."
       );
-      console.error(
-        "Start MongoDB with --replSet rs0, run rs.initiate(), then add ?replicaSet=rs0 to MONGODB_URI."
+      console.log(
+        `Effective connection: ${runtime.effectiveUri || process.env.MONGODB_URI}`
       );
-      process.exitCode = 1;
       return;
     }
 
-    console.log(`MongoDB transactions ready. Replica set: ${hello.setName}`);
+    console.log(
+      `MongoDB transactions ready. Replica set: ${runtime.replicaSetName}`
+    );
   } catch (error) {
     console.error(`Transaction check failed: ${error.message}`);
     process.exitCode = 1;

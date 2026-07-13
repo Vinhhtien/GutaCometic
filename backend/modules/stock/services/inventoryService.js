@@ -196,20 +196,40 @@ const completeImmediateSale = (storeId, items, session) =>
   });
 
 const receiveStock = (storeId, items, session) =>
-  updateEachItem({
-    storeId,
-    items,
-    session,
-    buildFilter: () => ({}),
-    buildUpdate: ({ quantity }) => ({
-      $inc: {
-        totalStock: quantity,
-        availableStock: quantity,
-      },
-    }),
-    errorCode: "INVENTORY_NOT_FOUND",
-    errorMessage: "Inventory record was not found for this product",
-  });
+  Promise.all(
+    normalizeItems(items).map(async ({ productId, quantity }) => {
+      const result = await StoreInventory.updateOne(
+        {
+          storeId,
+          productId,
+        },
+        {
+          $inc: {
+            totalStock: quantity,
+            availableStock: quantity,
+          },
+          $setOnInsert: {
+            reservedStock: 0,
+            lowStockThreshold: 5,
+          },
+        },
+        {
+          runValidators: true,
+          session,
+          upsert: true,
+        }
+      );
+
+      if (result.acknowledged === false) {
+        throw new AppError(
+          "Inventory record could not be updated",
+          409,
+          "INVENTORY_UPDATE_FAILED",
+          { productId, requested: quantity }
+        );
+      }
+    })
+  );
 
 const writeOffStock = (storeId, items, session) =>
   updateEachItem({
