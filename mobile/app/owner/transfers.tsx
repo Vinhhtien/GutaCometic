@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
@@ -35,6 +35,9 @@ type TransferItemDraft = {
   quantity: string;
 };
 
+const readParam = (value: string | string[] | undefined) =>
+  Array.isArray(value) ? value[0] || "" : value || "";
+
 const getStoreInventory = (entry: ProductInventory, storeId: string) =>
   entry.inventories.find((inventory) => inventory.store._id === storeId);
 
@@ -50,42 +53,40 @@ const getTotalAvailableForStore = (
     0
   );
 
-const pickPreferredSourceStoreId = (
-  nextStores: ManagedStore[],
-  nextProducts: ProductInventory[],
+const pickPreferredCentralStoreId = (
+  stores: ManagedStore[],
+  products: ProductInventory[],
   currentStoreId: string
 ) => {
-  if (currentStoreId && nextStores.some((store) => store._id === currentStoreId)) {
+  const centralStores = stores.filter((store) => store.type === "CENTRAL");
+
+  if (
+    currentStoreId &&
+    centralStores.some((store) => store._id === currentStoreId)
+  ) {
     return currentStoreId;
   }
 
-  const centralWithStock = nextStores.find(
-    (store) =>
-      store.type === "CENTRAL" &&
-      getTotalAvailableForStore(nextProducts, store._id) > 0
+  const centralWithStock = centralStores.find(
+    (store) => getTotalAvailableForStore(products, store._id) > 0
   );
 
   if (centralWithStock) {
     return centralWithStock._id;
   }
 
-  const storeWithStock = nextStores.find(
-    (store) => getTotalAvailableForStore(nextProducts, store._id) > 0
-  );
-
-  if (storeWithStock) {
-    return storeWithStock._id;
-  }
-
-  return (
-    nextStores.find((store) => store.type === "CENTRAL")?._id ||
-    nextStores[0]?._id ||
-    ""
-  );
+  return centralStores[0]?._id || "";
 };
 
 export default function OwnerTransfersScreen() {
   const { token } = useAuth();
+  const params = useLocalSearchParams<{
+    productId?: string | string[];
+    quantity?: string | string[];
+    requestId?: string | string[];
+    requestStoreName?: string | string[];
+    toStoreId?: string | string[];
+  }>();
   const [stores, setStores] = useState<ManagedStore[]>([]);
   const [products, setProducts] = useState<ProductInventory[]>([]);
   const [transfers, setTransfers] = useState<OwnerTransfer[]>([]);
@@ -101,6 +102,13 @@ export default function OwnerTransfersScreen() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
   const [isPickerVisible, setIsPickerVisible] = useState(false);
+  const [hasAppliedPrefill, setHasAppliedPrefill] = useState(false);
+
+  const requestedProductId = readParam(params.productId);
+  const requestedQuantity = Number.parseInt(readParam(params.quantity), 10);
+  const requestedToStoreId = readParam(params.toStoreId);
+  const requestedStoreName = readParam(params.requestStoreName);
+  const requestedRequestId = readParam(params.requestId);
 
   const loadData = useCallback(
     async (mode: "initial" | "refresh" = "initial") => {
@@ -114,23 +122,23 @@ export default function OwnerTransfersScreen() {
         } else {
           setIsLoading(true);
         }
+
         const [nextStores, nextProducts, nextTransfers] = await Promise.all([
           getOwnerStores(token, false),
           getProductInventory(token, { limit: 100 }),
           getOwnerTransfers(token, { status: statusFilter }),
         ]);
 
-        const nextFromStoreId = pickPreferredSourceStoreId(
+        const nextFromStoreId = pickPreferredCentralStoreId(
           nextStores,
           nextProducts,
           fromStoreId
         );
+        const branchStores = nextStores.filter((store) => store.type === "BRANCH");
         const nextToStoreId =
-          toStoreId &&
-          toStoreId !== nextFromStoreId &&
-          nextStores.some((store) => store._id === toStoreId)
+          toStoreId && branchStores.some((store) => store._id === toStoreId)
             ? toStoreId
-            : nextStores.find((store) => store._id !== nextFromStoreId)?._id || "";
+            : branchStores[0]?._id || "";
 
         setStores(nextStores);
         setProducts(nextProducts);
@@ -151,26 +159,87 @@ export default function OwnerTransfersScreen() {
     loadData();
   }, [loadData]);
 
+  const sourceStores = useMemo(
+    () => stores.filter((store) => store.type === "CENTRAL"),
+    [stores]
+  );
+  const destinationStores = useMemo(
+    () => stores.filter((store) => store.type === "BRANCH"),
+    [stores]
+  );
+
   useEffect(() => {
-    if (!fromStoreId || !stores.length) {
+    if (!fromStoreId || !destinationStores.length) {
       return;
     }
 
-    if (toStoreId && toStoreId !== fromStoreId) {
+    if (toStoreId && destinationStores.some((store) => store._id === toStoreId)) {
       return;
     }
 
-    const fallbackStoreId =
-      stores.find((store) => store._id !== fromStoreId)?._id || "";
+    setToStoreId(destinationStores[0]?._id || "");
+  }, [destinationStores, fromStoreId, toStoreId]);
 
-    if (fallbackStoreId !== toStoreId) {
-      setToStoreId(fallbackStoreId);
+  useEffect(() => {
+    if (
+      hasAppliedPrefill ||
+      (!requestedToStoreId && !requestedProductId) ||
+      stores.length === 0 ||
+      products.length === 0
+    ) {
+      return;
     }
-  }, [fromStoreId, stores, toStoreId]);
+
+    const targetStore = stores.find(
+      (store) => store._id === requestedToStoreId && store.type === "BRANCH"
+    );
+
+    if (targetStore) {
+      setToStoreId(targetStore._id);
+    }
+
+    if (
+      requestedProductId &&
+      !items.some((item) => item.productId === requestedProductId)
+    ) {
+      const productEntry = products.find(
+        (entry) => entry.product._id === requestedProductId
+      );
+
+      if (productEntry) {
+        setItems((current) => [
+          ...current,
+          {
+            productId: requestedProductId,
+            productName: productEntry.product.name,
+            quantity: String(
+              Number.isInteger(requestedQuantity) && requestedQuantity > 0
+                ? requestedQuantity
+                : 1
+            ),
+          },
+        ]);
+      }
+    }
+
+    setHasAppliedPrefill(true);
+  }, [
+    hasAppliedPrefill,
+    items,
+    products,
+    requestedProductId,
+    requestedQuantity,
+    requestedToStoreId,
+    stores,
+  ]);
 
   const sourceStore = useMemo(
     () => stores.find((store) => store._id === fromStoreId) || null,
     [fromStoreId, stores]
+  );
+  const destinationStore = useMemo(
+    () => stores.find((store) => store._id === toStoreId) || null,
+    [stores, toStoreId]
   );
 
   const availableProducts = useMemo(() => {
@@ -221,13 +290,24 @@ export default function OwnerTransfersScreen() {
       return;
     }
 
-    if (!fromStoreId || !toStoreId || fromStoreId === toStoreId) {
-      Alert.alert("Chưa chọn đúng kho", "Vui lòng chọn kho nguồn và kho đích khác nhau.");
+    if (!fromStoreId || !toStoreId) {
+      Alert.alert("Chưa chọn kho", "Hãy chọn kho tổng nguồn và chi nhánh đích.");
+      return;
+    }
+
+    if (sourceStore?.type !== "CENTRAL" || destinationStore?.type !== "BRANCH") {
+      Alert.alert(
+        "Sai nghiệp vụ",
+        "Phiếu điều chuyển chỉ được đi từ kho tổng đến chi nhánh."
+      );
       return;
     }
 
     if (items.length === 0) {
-      Alert.alert("Chưa có sản phẩm", "Hãy thêm ít nhất một sản phẩm vào phiếu điều chuyển.");
+      Alert.alert(
+        "Chưa có sản phẩm",
+        "Hãy thêm ít nhất một sản phẩm vào phiếu điều chuyển."
+      );
       return;
     }
 
@@ -241,7 +321,32 @@ export default function OwnerTransfersScreen() {
         (item) => !Number.isInteger(item.quantity) || item.quantity <= 0
       )
     ) {
-      Alert.alert("Số lượng không hợp lệ", "Mỗi sản phẩm cần có số lượng lớn hơn 0.");
+      Alert.alert(
+        "Số lượng không hợp lệ",
+        "Mỗi sản phẩm cần có số lượng lớn hơn 0."
+      );
+      return;
+    }
+
+    const exceededItem = normalizedItems.find((item) => {
+      const productEntry = products.find(
+        (entry) => entry.product._id === item.productId
+      );
+      const availableQuantity = productEntry
+        ? getStoreAvailableStock(productEntry, fromStoreId)
+        : 0;
+
+      return item.quantity > availableQuantity;
+    });
+
+    if (exceededItem) {
+      const exceededProduct = items.find(
+        (item) => item.productId === exceededItem.productId
+      );
+      Alert.alert(
+        "Không đủ hàng ở kho tổng",
+        `${exceededProduct?.productName || "Sản phẩm"} đang vượt số lượng khả dụng tại kho nguồn.`
+      );
       return;
     }
 
@@ -255,7 +360,10 @@ export default function OwnerTransfersScreen() {
       setTransfers((current) => [created, ...current]);
       setItems([]);
       await loadData("refresh");
-      Alert.alert("Đã tạo phiếu", "Phiếu điều chuyển đã được lưu và trừ tồn kho nguồn.");
+      Alert.alert(
+        "Đã tạo phiếu",
+        "Phiếu điều chuyển đã được tạo. Manager chi nhánh đích sẽ xác nhận khi nhập kho."
+      );
     } catch (error) {
       Alert.alert("Không tạo được phiếu", getErrorMessage(error));
     } finally {
@@ -290,10 +398,8 @@ export default function OwnerTransfersScreen() {
         </Pressable>
         <View style={styles.headerCopy}>
           <Text style={styles.eyebrow}>STOCK TRANSFER</Text>
-          <Text style={styles.title}>Tạo & theo dõi điều chuyển</Text>
-          <Text style={styles.subtitle}>
-            Phiếu tạo ở đây sẽ được nhận ở màn tồn kho của cửa hàng đích
-          </Text>
+          <Text style={styles.title}>Điều chuyển</Text>
+          <Text style={styles.subtitle}>Tạo và theo dõi phiếu</Text>
         </View>
       </View>
 
@@ -317,11 +423,20 @@ export default function OwnerTransfersScreen() {
           showsVerticalScrollIndicator={false}
         >
           <View style={styles.sectionCard}>
-            <Text style={styles.sectionTitle}>Tạo phiếu mới</Text>
+            <Text style={styles.sectionTitle}>Tạo phiếu</Text>
+
+            {requestedRequestId ? (
+              <View style={styles.prefillNotice}>
+                <Ionicons color="#2d5a4b" name="git-branch-outline" size={18} />
+                <Text style={styles.prefillNoticeText}>
+                  Tạo từ yêu cầu của {requestedStoreName || "chi nhánh"}.
+                </Text>
+              </View>
+            ) : null}
 
             <Text style={styles.inputLabel}>Kho nguồn</Text>
             <View style={styles.storeList}>
-              {stores.map((store) => {
+              {sourceStores.map((store) => {
                 const active = fromStoreId === store._id;
 
                 return (
@@ -347,33 +462,26 @@ export default function OwnerTransfersScreen() {
               <Ionicons color="#2d5a4b" name="information-circle-outline" size={18} />
               <Text style={styles.sourceNoticeText}>
                 {sourceStore
-                  ? `${sourceStore.name} hiện còn ${sourceStoreStock} sản phẩm khả dụng để điều chuyển.`
-                  : "Chọn kho nguồn để bắt đầu điều chuyển."}
+                  ? `${sourceStore.name}: ${sourceStoreStock} khả dụng`
+                  : "Chưa có kho nguồn khả dụng."}
               </Text>
             </View>
 
             <Text style={styles.inputLabel}>Kho đích</Text>
             <View style={styles.storeList}>
-              {stores.map((store) => {
+              {destinationStores.map((store) => {
                 const active = toStoreId === store._id;
-                const disabled = store._id === fromStoreId;
 
                 return (
                   <Pressable
                     key={`to-${store._id}`}
-                    disabled={disabled}
                     onPress={() => setToStoreId(store._id)}
-                    style={[
-                      styles.storeChip,
-                      active && styles.storeChipActive,
-                      disabled && styles.storeChipDisabled,
-                    ]}
+                    style={[styles.storeChip, active && styles.storeChipActive]}
                   >
                     <Text
                       style={[
                         styles.storeChipText,
                         active && styles.storeChipTextActive,
-                        disabled && styles.storeChipTextDisabled,
                       ]}
                     >
                       {store.name}
@@ -388,7 +496,7 @@ export default function OwnerTransfersScreen() {
               style={styles.secondaryButton}
             >
               <Ionicons color="#252525" name="add-circle-outline" size={18} />
-              <Text style={styles.secondaryButtonText}>Thêm sản phẩm vào phiếu</Text>
+              <Text style={styles.secondaryButtonText}>Thêm sản phẩm</Text>
             </Pressable>
 
             <View style={styles.itemList}>
@@ -441,12 +549,12 @@ export default function OwnerTransfersScreen() {
               {isSubmitting ? (
                 <ActivityIndicator color="#ffffff" />
               ) : (
-                <Text style={styles.primaryButtonText}>Tạo phiếu điều chuyển</Text>
+                <Text style={styles.primaryButtonText}>Tạo phiếu</Text>
               )}
             </Pressable>
           </View>
 
-          <Text style={styles.sectionTitle}>Theo dõi phiếu đã tạo</Text>
+          <Text style={styles.sectionTitle}>Danh sách phiếu</Text>
           <View style={styles.filterRow}>
             {(["ALL", "PENDING", "CONFIRMED", "CANCELLED"] as const).map((status) => {
               const active = statusFilter === status;
@@ -483,7 +591,7 @@ export default function OwnerTransfersScreen() {
                   <View style={styles.transferHeader}>
                     <View style={styles.itemCopy}>
                       <Text style={styles.cardTitle}>
-                        {transfer.fromStoreId.name} → {transfer.toStoreId.name}
+                        {`${transfer.fromStoreId.name} -> ${transfer.toStoreId.name}`}
                       </Text>
                       <Text style={styles.cardMeta}>
                         {transfer.items.length} sản phẩm · {transfer.status}
@@ -523,7 +631,18 @@ export default function OwnerTransfersScreen() {
                         </Text>
                       )}
                     </Pressable>
-                  ) : null}
+                  ) : (
+                    <View style={styles.waitingNote}>
+                      <Ionicons color="#52605a" name="information-circle-outline" size={16} />
+                      <Text style={styles.waitingNoteText}>
+                        {transfer.status === "CONFIRMED"
+                          ? "Đã nhận"
+                            : transfer.status === "CANCELLED"
+                            ? "Đã hủy"
+                            : "Chờ nhận"}
+                      </Text>
+                    </View>
+                  )}
                 </View>
               ))
             )}
@@ -542,7 +661,7 @@ export default function OwnerTransfersScreen() {
               style={styles.sheet}
             >
               <View style={styles.sheetHeader}>
-                <Text style={styles.sheetTitle}>Chọn sản phẩm điều chuyển</Text>
+                <Text style={styles.sheetTitle}>Chọn sản phẩm</Text>
                 <Pressable
                   onPress={() => setIsPickerVisible(false)}
                   style={styles.closeButton}
@@ -555,7 +674,7 @@ export default function OwnerTransfersScreen() {
                 <Ionicons color="#69756f" name="search-outline" size={18} />
                 <TextInput
                   onChangeText={setSearch}
-                  placeholder="Tìm sản phẩm ở kho nguồn..."
+                  placeholder="Tìm sản phẩm ở kho tổng..."
                   placeholderTextColor="#8a948f"
                   style={styles.searchInput}
                   value={search}
@@ -572,8 +691,8 @@ export default function OwnerTransfersScreen() {
                     <View style={styles.emptyPanel}>
                       <Text style={styles.emptyText}>
                         {sourceStore
-                          ? `Kho nguồn ${sourceStore.name} hiện chưa có sản phẩm khả dụng để điều chuyển.`
-                          : "Hãy chọn kho nguồn trước khi thêm sản phẩm."}
+                          ? `Kho tổng ${sourceStore.name} chưa có sản phẩm khả dụng để điều chuyển.`
+                          : "Hãy chọn kho tổng trước khi thêm sản phẩm."}
                       </Text>
                     </View>
                   ) : (
@@ -588,8 +707,7 @@ export default function OwnerTransfersScreen() {
                         >
                           <Text style={styles.cardTitle}>{entry.product.name}</Text>
                           <Text style={styles.cardMeta}>
-                            {entry.product.brand} · Còn{" "}
-                            {sourceInventory?.availableStock || 0}
+                            {entry.product.brand} · Còn {sourceInventory?.availableStock || 0}
                           </Text>
                         </Pressable>
                       );
@@ -644,6 +762,23 @@ const styles = StyleSheet.create({
     borderColor: "#e2e7df",
   },
   sectionTitle: { marginBottom: 10, color: "#1f2522", fontSize: 16, fontWeight: "900" },
+  prefillNotice: {
+    flexDirection: "row",
+    gap: 8,
+    marginBottom: 12,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: "#eef4ef",
+    borderWidth: 1,
+    borderColor: "#d9e4dc",
+  },
+  prefillNoticeText: {
+    flex: 1,
+    color: "#2d5a4b",
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: "800",
+  },
   inputLabel: { marginTop: 12, marginBottom: 6, color: "#52605a", fontSize: 12, fontWeight: "900" },
   storeList: { gap: 8 },
   storeChip: {
@@ -659,12 +794,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#eef4ef",
     borderColor: "#9fb8ad",
   },
-  storeChipDisabled: {
-    opacity: 0.45,
-  },
   storeChipText: { color: "#52605a", fontSize: 12, fontWeight: "800" },
   storeChipTextActive: { color: "#2d5a4b" },
-  storeChipTextDisabled: { color: "#87918c" },
   sourceNotice: {
     flexDirection: "row",
     gap: 8,
@@ -770,6 +901,21 @@ const styles = StyleSheet.create({
     borderColor: "#f1c5cd",
   },
   cancelButtonText: { color: "#9f2639", fontSize: 13, fontWeight: "900" },
+  waitingNote: {
+    flexDirection: "row",
+    gap: 8,
+    marginTop: 12,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: "#f7f8f5",
+  },
+  waitingNoteText: {
+    flex: 1,
+    color: "#52605a",
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: "700",
+  },
   emptyPanel: {
     minHeight: 110,
     alignItems: "center",

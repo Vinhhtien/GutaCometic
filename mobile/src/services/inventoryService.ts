@@ -69,10 +69,18 @@ export const getInventoryAlerts = async (token: string, storeId?: string) => {
 
 export const getRestockRequests = async (
   token: string,
-  status: "OPEN" | "RESOLVED" | "CANCELLED" | "ALL" = "OPEN"
+  status: "OPEN" | "RESOLVED" | "CANCELLED" | "ALL" = "OPEN",
+  storeId?: string
 ) => {
+  const params = new URLSearchParams();
+  params.set("status", status);
+
+  if (storeId) {
+    params.set("storeId", storeId);
+  }
+
   const response = await apiRequest<{ requests: InventoryRestockRequest[] }>(
-    `/inventory/restock-requests?status=${status}`,
+    `/inventory/restock-requests?${params.toString()}`,
     { token }
   );
 

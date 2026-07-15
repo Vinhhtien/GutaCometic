@@ -119,6 +119,36 @@ const getScopedStoreId = (user, requestedStoreId) => {
   return String(user.storeId);
 };
 
+const ensureStoreCanProcessInventoryMutation = async ({
+  allowOwnerOnBranch = false,
+  storeId,
+  user,
+}) => {
+  const store = await Store.findById(storeId).lean();
+
+  if (!store) {
+    throw new AppError("Store was not found", 404, "STORE_NOT_FOUND");
+  }
+
+  if (!store.isActive) {
+    throw new AppError("Store is inactive", 409, "STORE_INACTIVE");
+  }
+
+  if (
+    user.role === USER_ROLES.OWNER &&
+    !allowOwnerOnBranch &&
+    store.type !== "CENTRAL"
+  ) {
+    throw new AppError(
+      "Owner can only update stock directly in the central warehouse",
+      403,
+      "OWNER_BRANCH_STOCK_MUTATION_FORBIDDEN"
+    );
+  }
+
+  return store;
+};
+
 const getInventoryAlerts = async ({ storeId, user }) => {
   const scopedStoreId = getScopedStoreId(user, storeId);
   const expiresBefore = new Date(
@@ -365,6 +395,14 @@ const receiveRestockRequest = async ({
   }
 
   return runInTransaction(async (session) => {
+    if (user.role !== USER_ROLES.MANAGER) {
+      throw new AppError(
+        "Only the destination store manager can receive restock requests",
+        403,
+        "FORBIDDEN"
+      );
+    }
+
     const request = await InventoryRequest.findById(requestId).session(session);
 
     if (!request) {
@@ -461,6 +499,11 @@ const receiveDirectStock = async ({
     );
   }
 
+  await ensureStoreCanProcessInventoryMutation({
+    storeId: scopedStoreId,
+    user,
+  });
+
   return runInTransaction(async (session) => {
     await inventoryMutationService.receiveStock(
       scopedStoreId,
@@ -522,6 +565,11 @@ const createInventoryAdjustment = async ({
   if (!scopedStoreId || !productId) {
     throw new AppError("Store ID and product ID are required", 400, "INVALID_ADJUSTMENT");
   }
+
+  await ensureStoreCanProcessInventoryMutation({
+    storeId: scopedStoreId,
+    user,
+  });
 
   return runInTransaction(async (session) => {
     await inventoryMutationService.writeOffStock(

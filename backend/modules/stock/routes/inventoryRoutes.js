@@ -45,7 +45,7 @@ router.post(
 
 router.post(
   "/restock-requests/:requestId/receive",
-  authorize(USER_ROLES.OWNER, USER_ROLES.MANAGER),
+  authorize(USER_ROLES.MANAGER),
   inventoryController.receiveRestockRequest
 );
 

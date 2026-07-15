@@ -85,6 +85,7 @@ export default function OwnerProductsScreen() {
         } else {
           setIsLoading(true);
         }
+
         const nextProducts = await getOwnerProducts(token, { includeInactive: true });
         setProducts(nextProducts);
       } catch (error) {
@@ -159,14 +160,6 @@ export default function OwnerProductsScreen() {
       return;
     }
 
-    if (
-      payload.costPrice !== null &&
-      (!Number.isFinite(payload.costPrice) || payload.costPrice < 0)
-    ) {
-      Alert.alert("Giá vốn không hợp lệ", "Vui lòng nhập giá vốn là số lớn hơn hoặc bằng 0.");
-      return;
-    }
-
     try {
       const updated = await updateOwnerProduct(token, product._id, {
         isActive: !product.isActive,
@@ -185,7 +178,10 @@ export default function OwnerProductsScreen() {
     }
 
     if (!form.sku || !form.name || !form.brand || !form.category || !form.price) {
-      Alert.alert("Thiếu thông tin", "Vui lòng nhập đủ SKU, tên, hãng, loại và giá.");
+      Alert.alert(
+        "Thiếu thông tin",
+        "Vui lòng nhập đủ SKU, tên, hãng, loại và giá bán."
+      );
       return;
     }
 
@@ -209,7 +205,15 @@ export default function OwnerProductsScreen() {
     };
 
     if (!Number.isFinite(payload.price) || payload.price < 0) {
-      Alert.alert("Giá không hợp lệ", "Vui lòng nhập giá bán là số lớn hơn hoặc bằng 0.");
+      Alert.alert("Giá bán không hợp lệ", "Vui lòng nhập giá bán >= 0.");
+      return;
+    }
+
+    if (
+      payload.costPrice !== null &&
+      (!Number.isFinite(payload.costPrice) || payload.costPrice < 0)
+    ) {
+      Alert.alert("Giá vốn không hợp lệ", "Vui lòng nhập giá vốn >= 0.");
       return;
     }
 
@@ -242,10 +246,8 @@ export default function OwnerProductsScreen() {
         </Pressable>
         <View style={styles.headerCopy}>
           <Text style={styles.eyebrow}>PRODUCT OWNER</Text>
-          <Text style={styles.title}>Sản phẩm & giá bán</Text>
-          <Text style={styles.subtitle}>
-            Tạo mới sản phẩm và cập nhật giá niêm yết trên toàn chuỗi
-          </Text>
+          <Text style={styles.title}>Sản phẩm & giá</Text>
+          <Text style={styles.subtitle}>Quản lý sản phẩm toàn chuỗi</Text>
         </View>
       </View>
 
@@ -284,8 +286,14 @@ export default function OwnerProductsScreen() {
           </View>
 
           <View style={styles.summaryRow}>
-            <SummaryCard label="Đang kinh doanh" value={String(products.filter((item) => item.isActive).length)} />
-            <SummaryCard label="Ngưng bán" value={String(products.filter((item) => !item.isActive).length)} />
+            <SummaryCard
+              label="Đang kinh doanh"
+              value={String(products.filter((item) => item.isActive).length)}
+            />
+            <SummaryCard
+              label="Tạm ẩn"
+              value={String(products.filter((item) => !item.isActive).length)}
+            />
           </View>
 
           <View style={styles.cardList}>
@@ -374,25 +382,96 @@ export default function OwnerProductsScreen() {
             </View>
 
             <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-              <Input label="SKU" value={form.sku} onChangeText={(value) => setForm((current) => ({ ...current, sku: value }))} />
-              <Input label="Tên sản phẩm" value={form.name} onChangeText={(value) => setForm((current) => ({ ...current, name: value }))} />
-              <Input label="Thương hiệu" value={form.brand} onChangeText={(value) => setForm((current) => ({ ...current, brand: value }))} />
-              <Input label="Danh mục" value={form.category} onChangeText={(value) => setForm((current) => ({ ...current, category: value }))} />
-              <Input label="Giá bán" keyboardType="number-pad" value={form.price} onChangeText={(value) => setForm((current) => ({ ...current, price: value.replace(/[^0-9]/g, "") }))} />
-              <Input label="Giá gốc (nếu có)" keyboardType="number-pad" value={form.originalPrice} onChangeText={(value) => setForm((current) => ({ ...current, originalPrice: value.replace(/[^0-9]/g, "") }))} />
-              <Input label="Loại da (phân tách dấu phẩy)" value={form.skinTypes} onChangeText={(value) => setForm((current) => ({ ...current, skinTypes: value }))} />
-              <Input label="Dung tích" value={form.volume} onChangeText={(value) => setForm((current) => ({ ...current, volume: value }))} />
-              <Input label="Xuất xứ" value={form.origin} onChangeText={(value) => setForm((current) => ({ ...current, origin: value }))} />
-              <Input label="Hạn sử dụng" value={form.expiryDate} onChangeText={(value) => setForm((current) => ({ ...current, expiryDate: value }))} />
-              <Input label="Link ảnh" value={form.image} onChangeText={(value) => setForm((current) => ({ ...current, image: value }))} />
+              <Input
+                label="SKU"
+                value={form.sku}
+                onChangeText={(value) => setForm((current) => ({ ...current, sku: value }))}
+              />
+              <Input
+                label="Tên sản phẩm"
+                value={form.name}
+                onChangeText={(value) => setForm((current) => ({ ...current, name: value }))}
+              />
+              <Input
+                label="Thương hiệu"
+                value={form.brand}
+                onChangeText={(value) => setForm((current) => ({ ...current, brand: value }))}
+              />
+              <Input
+                label="Danh mục"
+                value={form.category}
+                onChangeText={(value) => setForm((current) => ({ ...current, category: value }))}
+              />
+              <Input
+                label="Giá bán"
+                keyboardType="number-pad"
+                value={form.price}
+                onChangeText={(value) =>
+                  setForm((current) => ({
+                    ...current,
+                    price: value.replace(/[^0-9]/g, ""),
+                  }))
+                }
+              />
+              <Input
+                label="Giá gốc (nếu có)"
+                keyboardType="number-pad"
+                value={form.originalPrice}
+                onChangeText={(value) =>
+                  setForm((current) => ({
+                    ...current,
+                    originalPrice: value.replace(/[^0-9]/g, ""),
+                  }))
+                }
+              />
+              <Input
+                label="Giá vốn / giá nhập"
+                keyboardType="number-pad"
+                value={form.costPrice}
+                onChangeText={(value) =>
+                  setForm((current) => ({
+                    ...current,
+                    costPrice: value.replace(/[^0-9]/g, ""),
+                  }))
+                }
+              />
+              <Input
+                label="Loại da (tách dấu phẩy)"
+                value={form.skinTypes}
+                onChangeText={(value) =>
+                  setForm((current) => ({ ...current, skinTypes: value }))
+                }
+              />
+              <Input
+                label="Dung tích"
+                value={form.volume}
+                onChangeText={(value) => setForm((current) => ({ ...current, volume: value }))}
+              />
+              <Input
+                label="Xuất xứ"
+                value={form.origin}
+                onChangeText={(value) => setForm((current) => ({ ...current, origin: value }))}
+              />
+              <Input
+                label="Hạn sử dụng"
+                value={form.expiryDate}
+                onChangeText={(value) =>
+                  setForm((current) => ({ ...current, expiryDate: value }))
+                }
+              />
+              <Input
+                label="Link ảnh"
+                value={form.image}
+                onChangeText={(value) => setForm((current) => ({ ...current, image: value }))}
+              />
               <Input
                 label="Mô tả"
                 multiline
                 value={form.description}
-                onChangeText={(value) => setForm((current) => ({ ...current, description: value }))}
+                onChangeText={(value) =>
+                  setForm((current) => ({ ...current, description: value }))
+                }
               />
-
-              <Input label="Giá vốn / giá nhập" keyboardType="number-pad" value={form.costPrice} onChangeText={(value) => setForm((current) => ({ ...current, costPrice: value.replace(/[^0-9]/g, "") }))} />
 
               <Pressable disabled={isSaving} onPress={handleSubmit} style={styles.submitButton}>
                 {isSaving ? (

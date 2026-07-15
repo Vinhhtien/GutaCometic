@@ -20,26 +20,29 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/contexts/AuthContext";
 import { getErrorMessage } from "@/services/api";
 import {
+  acknowledgeRestockRequest,
   createInventoryAdjustment,
   getIncomingTransfers,
   getInventoryAlerts,
   getProductInventory,
+  getRestockRequests,
   receiveDirectStock,
 } from "@/services/inventoryService";
-import { getOwnerStores } from "@/services/ownerService";
 import {
   IncomingStockTransfer,
   InventoryAdjustmentType,
   InventoryAlert,
+  InventoryRestockRequest,
   ProductInventory,
 } from "@/types/inventory";
 import { ManagedStore } from "@/types/owner";
+import { getOwnerStores } from "@/services/ownerService";
 
 const ADJUSTMENT_LABELS: Record<InventoryAdjustmentType, string> = {
   DAMAGED: "Hàng hỏng",
   DEFECTIVE: "Hàng lỗi",
   EXPIRED: "Hết hạn",
-  LOST: "Mất mát",
+  LOST: "Thất lạc",
   OTHER: "Khác",
 };
 
@@ -48,16 +51,15 @@ const PRODUCT_PICKER_LIMIT = 20;
 
 type InventoryActionMode = "receive" | "writeoff";
 
-const getInventoryForStore = (
-  entry: ProductInventory,
-  storeId: string
-) => entry.inventories.find((inventory) => inventory.store._id === storeId);
+const getInventoryForStore = (entry: ProductInventory, storeId: string) =>
+  entry.inventories.find((inventory) => inventory.store._id === storeId);
 
 export default function OwnerInventoryScreen() {
   const { token } = useAuth();
   const [stores, setStores] = useState<ManagedStore[]>([]);
   const [selectedStoreId, setSelectedStoreId] = useState("");
   const [alerts, setAlerts] = useState<InventoryAlert[]>([]);
+  const [requests, setRequests] = useState<InventoryRestockRequest[]>([]);
   const [transfers, setTransfers] = useState<IncomingStockTransfer[]>([]);
   const [products, setProducts] = useState<ProductInventory[]>([]);
   const [search, setSearch] = useState("");
@@ -85,12 +87,16 @@ export default function OwnerInventoryScreen() {
         } else {
           setIsLoading(true);
         }
-        const [nextAlerts, nextTransfers, nextProducts] = await Promise.all([
+
+        const [nextAlerts, nextRequests, nextTransfers, nextProducts] = await Promise.all([
           getInventoryAlerts(token, storeId).catch(() => []),
+          getRestockRequests(token, "OPEN", storeId).catch(() => []),
           getIncomingTransfers(token, storeId).catch(() => []),
           getProductInventory(token, { limit: 100 }).catch(() => []),
         ]);
+
         setAlerts(nextAlerts);
+        setRequests(nextRequests);
         setTransfers(nextTransfers);
         setProducts(nextProducts);
       } catch (error) {
@@ -133,6 +139,7 @@ export default function OwnerInventoryScreen() {
     () => stores.find((store) => store._id === selectedStoreId) || null,
     [selectedStoreId, stores]
   );
+  const isCentralStore = selectedStore?.type === "CENTRAL";
 
   const visibleProducts = useMemo(() => {
     const keyword = search.trim().toLowerCase();
@@ -166,10 +173,7 @@ export default function OwnerInventoryScreen() {
           return false;
         }
 
-        if (
-          actionMode === "writeoff" &&
-          selectedInventory.availableStock <= 0
-        ) {
+        if (actionMode === "writeoff" && selectedInventory.availableStock <= 0) {
           return false;
         }
 
@@ -186,6 +190,14 @@ export default function OwnerInventoryScreen() {
   }, [actionMode, actionSearch, products, selectedStoreId]);
 
   const openActionModal = (mode: InventoryActionMode) => {
+    if (!isCentralStore) {
+      Alert.alert(
+        "Đúng vai trò nghiệp vụ",
+        "Nhập và trừ kho chi nhánh do manager phụ trách. Owner thao tác trực tiếp ở kho tổng."
+      );
+      return;
+    }
+
     setActionMode(mode);
     setSelectedProduct(null);
     setQuantity("1");
@@ -204,27 +216,41 @@ export default function OwnerInventoryScreen() {
     await loadInventory(storeId, "refresh");
   };
 
-  const handleConfirmTransfer = async (transfer: IncomingStockTransfer) => {
-    if (!token || processingId || !selectedStoreId) {
+  const handleAcknowledgeRequest = async (request: InventoryRestockRequest) => {
+    if (!token || processingId) {
       return;
     }
 
     try {
-      setProcessingId(transfer._id);
-      Alert.alert(
-        "Theo nghiệp vụ mới",
-        "Manager của cửa hàng đích sẽ là người xác nhận nhập điều chuyển ở màn hình kho chi nhánh."
+      setProcessingId(request._id);
+      const updatedRequest = await acknowledgeRestockRequest(token, request._id);
+      setRequests((current) =>
+        current.map((item) =>
+          item._id === updatedRequest._id ? updatedRequest : item
+        )
       );
-      return;
     } catch (error) {
-      Alert.alert("Không xác nhận được", getErrorMessage(error));
+      Alert.alert("Không đánh dấu được", getErrorMessage(error));
     } finally {
       setProcessingId(null);
     }
   };
 
+  const handleOpenTransferDraft = (request: InventoryRestockRequest) => {
+    router.push({
+      pathname: "/owner/transfers",
+      params: {
+        productId: request.productId._id,
+        quantity: String(request.requestedQuantity),
+        requestId: request._id,
+        requestStoreName: request.storeId.name,
+        toStoreId: request.storeId._id,
+      },
+    });
+  };
+
   const handleInventoryAction = async () => {
-    if (!token || !selectedProduct || !selectedStoreId) {
+    if (!token || !selectedProduct || !selectedStoreId || !isCentralStore) {
       return;
     }
 
@@ -237,8 +263,8 @@ export default function OwnerInventoryScreen() {
 
     if (actionMode === "receive" && parsedQuantity > MAX_STOCK_RECEIVE_QUANTITY) {
       Alert.alert(
-        "Vuot gioi han nhap kho",
-        `Moi lan nhap kho chi duoc toi da ${MAX_STOCK_RECEIVE_QUANTITY} san pham.`
+        "Vượt giới hạn nhập kho",
+        `Mỗi lần nhập kho chỉ được tối đa ${MAX_STOCK_RECEIVE_QUANTITY} sản phẩm.`
       );
       return;
     }
@@ -268,7 +294,7 @@ export default function OwnerInventoryScreen() {
       Alert.alert(
         actionMode === "receive" ? "Đã nhập hàng" : "Đã trừ tồn kho",
         actionMode === "receive"
-          ? "Số lượng trong kho đã được cộng thêm."
+          ? "Kho tổng đã được cộng thêm số lượng."
           : "Báo cáo kiểm kê đã được ghi nhận."
       );
     } catch (error) {
@@ -286,10 +312,8 @@ export default function OwnerInventoryScreen() {
         </Pressable>
         <View style={styles.headerCopy}>
           <Text style={styles.eyebrow}>CHAIN INVENTORY</Text>
-          <Text style={styles.title}>Tồn kho & cảnh báo</Text>
-          <Text style={styles.subtitle}>
-            Quản lý theo từng cửa hàng nhưng vẫn nhìn được toàn bộ dữ liệu chuỗi
-          </Text>
+          <Text style={styles.title}>Tồn kho</Text>
+          <Text style={styles.subtitle}>Theo dõi kho theo cửa hàng</Text>
         </View>
       </View>
 
@@ -316,7 +340,7 @@ export default function OwnerInventoryScreen() {
           }
           showsVerticalScrollIndicator={false}
         >
-          <Text style={styles.sectionTitle}>Cửa hàng đang xem</Text>
+          <Text style={styles.sectionTitle}>Cửa hàng</Text>
           <View style={styles.storeList}>
             {stores.map((store) => {
               const active = selectedStoreId === store._id;
@@ -342,31 +366,44 @@ export default function OwnerInventoryScreen() {
 
           <View style={styles.summaryRow}>
             <SummaryCard label="Cảnh báo" value={String(alerts.length)} />
+            <SummaryCard label="Sales báo" value={String(requests.length)} />
+          </View>
+          <View style={styles.summaryRow}>
+            <SummaryCard label="Chờ manager nhận" value={String(transfers.length)} />
             <SummaryCard
-              label="Điều chuyển chờ nhận"
-              value={String(transfers.length)}
+              label={isCentralStore ? "Vai trò Owner" : "Vai trò Chi nhánh"}
+              value={isCentralStore ? "Kho tổng" : "Manager xử lý"}
             />
           </View>
 
-          <View style={styles.actionPanel}>
-            <Pressable
-              onPress={() => openActionModal("receive")}
-              style={styles.actionButton}
-            >
-              <Ionicons color="#252525" name="add-circle-outline" size={18} />
-              <Text style={styles.actionButtonText}>Nhập hàng vào kho này</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => openActionModal("writeoff")}
-              style={styles.dangerActionButton}
-            >
-              <Ionicons color="#9f2639" name="remove-circle-outline" size={18} />
-              <Text style={styles.dangerActionButtonText}>Trừ tồn kho</Text>
-            </Pressable>
-          </View>
+          {isCentralStore ? (
+            <View style={styles.actionPanel}>
+              <Pressable
+                onPress={() => openActionModal("receive")}
+                style={styles.actionButton}
+              >
+                <Ionicons color="#252525" name="add-circle-outline" size={18} />
+                <Text style={styles.actionButtonText}>Nhập kho</Text>
+              </Pressable>
+              <Pressable
+                onPress={() => openActionModal("writeoff")}
+                style={styles.dangerActionButton}
+              >
+                <Ionicons color="#9f2639" name="remove-circle-outline" size={18} />
+                <Text style={styles.dangerActionButtonText}>Trừ kho</Text>
+              </Pressable>
+            </View>
+          ) : (
+            <View style={styles.noticePanel}>
+              <Ionicons color="#2d5a4b" name="people-outline" size={18} />
+              <Text style={styles.noticeText}>
+                Chi nhánh này do manager xử lý nhập kho.
+              </Text>
+            </View>
+          )}
 
           <Text style={styles.sectionTitle}>
-            Cảnh báo của {selectedStore?.name || "cửa hàng"}
+            Cảnh báo {selectedStore?.name || "cửa hàng"}
           </Text>
           <View style={styles.cardList}>
             {alerts.length === 0 ? (
@@ -396,10 +433,70 @@ export default function OwnerInventoryScreen() {
             )}
           </View>
 
-          <Text style={styles.sectionTitle}>Phiếu điều chuyển chờ xác nhận</Text>
+          <Text style={styles.sectionTitle}>Yêu cầu bổ sung</Text>
+          <View style={styles.cardList}>
+            {requests.length === 0 ? (
+              <EmptyPanel text="Không có yêu cầu bổ sung hàng đang mở ở cửa hàng đang xem." />
+            ) : (
+              requests.map((request) => (
+                <View key={request._id} style={styles.requestCard}>
+                  <View style={styles.requestHeader}>
+                    <View style={styles.alertCopy}>
+                      <Text style={styles.cardTitle}>{request.productId.name}</Text>
+                      <Text style={styles.cardMeta}>
+                        Đề xuất {request.requestedQuantity} · Còn {request.currentAvailableStock}
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.readStatusPill,
+                        request.acknowledgedBy && styles.readStatusPillDone,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.readStatusText,
+                          request.acknowledgedBy && styles.readStatusTextDone,
+                        ]}
+                      >
+                        {request.acknowledgedBy ? "Đã xem" : "Cần xem"}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.reasonText}>{request.reason}</Text>
+                  <Text style={styles.helperText}>
+                    Sales tạo: {request.requestedBy.fullName}
+                  </Text>
+
+                  <View style={styles.requestActionRow}>
+                    {!request.acknowledgedBy ? (
+                      <Pressable
+                        disabled={processingId === request._id}
+                        onPress={() => handleAcknowledgeRequest(request)}
+                        style={styles.secondaryButton}
+                      >
+                        <Text style={styles.secondaryButtonText}>Đánh dấu đã xem</Text>
+                      </Pressable>
+                    ) : null}
+                    <Pressable
+                      onPress={() => handleOpenTransferDraft(request)}
+                      style={styles.primaryInlineButton}
+                    >
+                      <Text style={styles.primaryInlineButtonText}>Mở phiếu</Text>
+                    </Pressable>
+                  </View>
+                </View>
+              ))
+            )}
+          </View>
+
+          <Text style={styles.sectionTitle}>
+            Phiếu chờ nhận
+          </Text>
           <View style={styles.cardList}>
             {transfers.length === 0 ? (
-              <EmptyPanel text="Không có phiếu điều chuyển đang chờ ở cửa hàng đã chọn." />
+              <EmptyPanel text="Không có phiếu điều chuyển đang chờ manager xác nhận ở cửa hàng này." />
             ) : (
               transfers.map((transfer) => (
                 <View key={transfer._id} style={styles.transferCard}>
@@ -413,25 +510,18 @@ export default function OwnerInventoryScreen() {
                       {item.productId.name} x{item.quantity}
                     </Text>
                   ))}
-                  <Pressable
-                    disabled={processingId === transfer._id}
-                    onPress={() => handleConfirmTransfer(transfer)}
-                    style={styles.primaryButton}
-                  >
-                    {processingId === transfer._id ? (
-                      <ActivityIndicator color="#ffffff" />
-                    ) : (
-                      <Text style={styles.primaryButtonText}>
-                        Xác nhận nhập điều chuyển
-                      </Text>
-                    )}
-                  </Pressable>
+                  <View style={styles.noticePanelSmall}>
+                    <Ionicons color="#52605a" name="information-circle-outline" size={16} />
+                    <Text style={styles.noticeSmallText}>
+                      Manager xác nhận ở chi nhánh đích.
+                    </Text>
+                  </View>
                 </View>
               ))
             )}
           </View>
 
-          <Text style={styles.sectionTitle}>Tồn kho theo sản phẩm</Text>
+          <Text style={styles.sectionTitle}>Sản phẩm tồn kho</Text>
           <View style={styles.searchBox}>
             <Ionicons color="#69756f" name="search-outline" size={18} />
             <TextInput
@@ -492,7 +582,7 @@ export default function OwnerInventoryScreen() {
             >
               <View style={styles.sheetHeader}>
                 <Text style={styles.sheetTitle}>
-                  {actionMode === "receive" ? "Nhập hàng trực tiếp" : "Trừ tồn kho"}
+                  {actionMode === "receive" ? "Nhập hàng vào kho tổng" : "Trừ tồn kho tổng"}
                 </Text>
                 <Pressable
                   onPress={() => setIsActionVisible(false)}
@@ -514,7 +604,7 @@ export default function OwnerInventoryScreen() {
                     onChangeText={setActionSearch}
                     placeholder={
                       actionMode === "receive"
-                        ? "Tìm sản phẩm cần nhập thêm..."
+                        ? "Tìm sản phẩm cần nhập..."
                         : "Tìm sản phẩm cần trừ kho..."
                     }
                     placeholderTextColor="#8a948f"
@@ -528,8 +618,8 @@ export default function OwnerInventoryScreen() {
                     <EmptyPanel
                       text={
                         actionMode === "receive"
-                          ? "Không có sản phẩm phù hợp để nhập thêm vào kho này."
-                          : "Kho này chưa có sản phẩm nào còn tồn để trừ kho."
+                          ? "Không có sản phẩm phù hợp để nhập thêm vào kho tổng."
+                          : "Kho tổng chưa có sản phẩm nào còn tồn để trừ kho."
                       }
                     />
                   ) : (
@@ -592,20 +682,7 @@ export default function OwnerInventoryScreen() {
                 <Text style={styles.inputLabel}>Số lượng</Text>
                 <TextInput
                   keyboardType="number-pad"
-                  onChangeText={(value) =>
-                    setQuantity(
-                      actionMode === "receive"
-                        ? value.replace(/[^0-9]/g, "")
-                          ? String(
-                              Math.min(
-                                Number.parseInt(value.replace(/[^0-9]/g, ""), 10),
-                                MAX_STOCK_RECEIVE_QUANTITY
-                              )
-                            )
-                          : ""
-                        : value.replace(/[^0-9]/g, "")
-                    )
-                  }
+                  onChangeText={(value) => setQuantity(value.replace(/[^0-9]/g, ""))}
                   style={styles.input}
                   value={quantity}
                 />
@@ -633,9 +710,7 @@ export default function OwnerInventoryScreen() {
                     <ActivityIndicator color="#ffffff" />
                   ) : (
                     <Text style={styles.primaryButtonText}>
-                      {actionMode === "receive"
-                        ? "Xác nhận nhập hàng"
-                        : "Ghi nhận trừ kho"}
+                      {actionMode === "receive" ? "Xác nhận nhập hàng" : "Ghi nhận trừ kho"}
                     </Text>
                   )}
                 </Pressable>
@@ -752,22 +827,21 @@ const styles = StyleSheet.create({
     backgroundColor: "#fff1f3",
   },
   dangerActionButtonText: { color: "#9f2639", fontSize: 12, fontWeight: "900" },
-  searchBox: {
-    minHeight: 46,
+  noticePanel: {
     flexDirection: "row",
-    alignItems: "center",
     gap: 8,
-    paddingHorizontal: 12,
+    marginTop: 12,
+    padding: 12,
     borderRadius: 8,
-    backgroundColor: "#ffffff",
+    backgroundColor: "#eef4ef",
     borderWidth: 1,
-    borderColor: "#e2e7df",
+    borderColor: "#d9e4dc",
   },
-  searchInput: {
+  noticeText: {
     flex: 1,
-    minHeight: 44,
-    color: "#1f2522",
-    fontSize: 13,
+    color: "#2d5a4b",
+    fontSize: 12,
+    lineHeight: 18,
     fontWeight: "800",
   },
   cardList: { gap: 10 },
@@ -798,6 +872,48 @@ const styles = StyleSheet.create({
     lineHeight: 17,
     fontWeight: "700",
   },
+  requestCard: {
+    gap: 10,
+    padding: 14,
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e2e7df",
+  },
+  requestHeader: { flexDirection: "row", gap: 10 },
+  readStatusPill: {
+    minHeight: 30,
+    justifyContent: "center",
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: "#fff7eb",
+  },
+  readStatusPillDone: { backgroundColor: "#eef4ef" },
+  readStatusText: { color: "#9a6b13", fontSize: 10, fontWeight: "900" },
+  readStatusTextDone: { color: "#2d5a4b" },
+  reasonText: { color: "#52605a", fontSize: 12, lineHeight: 18, fontWeight: "700" },
+  helperText: { color: "#69756f", fontSize: 12, fontWeight: "700" },
+  requestActionRow: { flexDirection: "row", gap: 8 },
+  secondaryButton: {
+    flex: 1,
+    minHeight: 42,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#d9dfd8",
+  },
+  secondaryButtonText: { color: "#252525", fontSize: 12, fontWeight: "900" },
+  primaryInlineButton: {
+    flex: 1,
+    minHeight: 42,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    backgroundColor: "#252525",
+  },
+  primaryInlineButtonText: { color: "#ffffff", fontSize: 12, fontWeight: "900" },
   transferCard: {
     gap: 10,
     padding: 14,
@@ -807,6 +923,38 @@ const styles = StyleSheet.create({
     borderColor: "#e2e7df",
   },
   itemText: { color: "#52605a", fontSize: 12, lineHeight: 18, fontWeight: "700" },
+  noticePanelSmall: {
+    flexDirection: "row",
+    gap: 8,
+    padding: 10,
+    borderRadius: 8,
+    backgroundColor: "#f7f8f5",
+  },
+  noticeSmallText: {
+    flex: 1,
+    color: "#52605a",
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: "700",
+  },
+  searchBox: {
+    minHeight: 46,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    paddingHorizontal: 12,
+    borderRadius: 8,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#e2e7df",
+  },
+  searchInput: {
+    flex: 1,
+    minHeight: 44,
+    color: "#1f2522",
+    fontSize: 13,
+    fontWeight: "800",
+  },
   productCard: {
     padding: 14,
     borderRadius: 8,
@@ -825,14 +973,6 @@ const styles = StyleSheet.create({
   },
   stockValue: { color: "#1f2522", fontSize: 20, fontWeight: "900" },
   stockLabel: { marginTop: 4, color: "#69756f", fontSize: 11, fontWeight: "800" },
-  primaryButton: {
-    minHeight: 46,
-    alignItems: "center",
-    justifyContent: "center",
-    borderRadius: 8,
-    backgroundColor: "#252525",
-  },
-  primaryButtonText: { color: "#ffffff", fontSize: 13, fontWeight: "900" },
   emptyPanel: {
     minHeight: 110,
     alignItems: "center",
@@ -855,9 +995,7 @@ const styles = StyleSheet.create({
     justifyContent: "flex-end",
     backgroundColor: "rgba(0,0,0,0.42)",
   },
-  sheetWrapper: {
-    justifyContent: "flex-end",
-  },
+  sheetWrapper: { justifyContent: "flex-end" },
   sheet: {
     maxHeight: "92%",
     paddingHorizontal: 18,
@@ -927,4 +1065,12 @@ const styles = StyleSheet.create({
   typeChipActive: { backgroundColor: "#252525", borderColor: "#252525" },
   typeChipText: { color: "#52605a", fontSize: 12, fontWeight: "900" },
   typeChipTextActive: { color: "#ffffff" },
+  primaryButton: {
+    minHeight: 46,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    backgroundColor: "#252525",
+  },
+  primaryButtonText: { color: "#ffffff", fontSize: 13, fontWeight: "900" },
 });

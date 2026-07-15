@@ -786,7 +786,35 @@ const createStockTransfer = async (payload, owner) => {
     );
   }
 
-  await Promise.all([ensureStoreExists(fromStoreId), ensureStoreExists(toStoreId)]);
+  const [fromStore, toStore] = await Promise.all([
+    ensureStoreExists(fromStoreId),
+    ensureStoreExists(toStoreId),
+  ]);
+
+  if (!fromStore.isActive || !toStore.isActive) {
+    throw new AppError(
+      "Stock transfers require both source and destination stores to be active",
+      409,
+      "STORE_INACTIVE"
+    );
+  }
+
+  if (fromStore.type !== STORE_TYPES.CENTRAL) {
+    throw new AppError(
+      "Stock transfers must start from the central warehouse",
+      400,
+      "INVALID_TRANSFER_SOURCE"
+    );
+  }
+
+  if (toStore.type !== STORE_TYPES.BRANCH) {
+    throw new AppError(
+      "Stock transfers can only be sent to a branch store",
+      400,
+      "INVALID_TRANSFER_DESTINATION"
+    );
+  }
+
   const items = inventoryMutationService.normalizeItems(payload.items);
 
   return runInTransaction(async (session) => {

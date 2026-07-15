@@ -221,15 +221,15 @@ export default function ManagerInventoryScreen() {
     }
     if (quantity > MAX_STOCK_RECEIVE_QUANTITY) {
       Alert.alert(
-        "Vuot gioi han nhap kho",
-        `Moi lan nhap kho chi duoc toi da ${MAX_STOCK_RECEIVE_QUANTITY} san pham.`
+        "Vượt giới hạn nhập kho",
+        `Mỗi lần nhập kho chỉ được tối đa ${MAX_STOCK_RECEIVE_QUANTITY} sản phẩm.`
       );
       return;
     }
     if (quantity > selectedRequest.requestedQuantity) {
       Alert.alert(
-        "Vuot so luong de xuat",
-        "Phieu nay chi cho nhap toi da " + selectedRequest.requestedQuantity + " san pham."
+        "Vượt số lượng đề xuất",
+        "Phiếu này chỉ cho nhập tối đa " + selectedRequest.requestedQuantity + " sản phẩm."
       );
       return;
     }
@@ -309,8 +309,8 @@ export default function ManagerInventoryScreen() {
 
     if (quantity > MAX_STOCK_RECEIVE_QUANTITY) {
       Alert.alert(
-        "Vuot gioi han nhap kho",
-        `Moi lan nhap kho chi duoc toi da ${MAX_STOCK_RECEIVE_QUANTITY} san pham.`
+        "Vượt giới hạn nhập kho",
+        `Mỗi lần nhập kho chỉ được tối đa ${MAX_STOCK_RECEIVE_QUANTITY} sản phẩm.`
       );
       return;
     }
@@ -505,7 +505,7 @@ export default function ManagerInventoryScreen() {
                     style={styles.alertToolbarButton}
                   >
                     <Text style={styles.alertToolbarButtonText}>
-                      {isAlertListExpanded ? "Thu gon" : "Xem them"}
+                      {isAlertListExpanded ? "Thu gọn" : "Xem thêm"}
                     </Text>
                   </Pressable>
                 ) : null}
@@ -517,7 +517,7 @@ export default function ManagerInventoryScreen() {
                     }}
                     style={styles.alertToolbarButton}
                   >
-                    <Text style={styles.alertToolbarButtonText}>Xoa tat ca</Text>
+                    <Text style={styles.alertToolbarButtonText}>Xóa tất cả</Text>
                   </Pressable>
                 ) : null}
                 {hiddenAlertKeys.length > 0 ? (
@@ -525,7 +525,7 @@ export default function ManagerInventoryScreen() {
                     onPress={() => setHiddenAlertKeys([])}
                     style={styles.alertToolbarButton}
                   >
-                    <Text style={styles.alertToolbarButtonText}>Khoi phuc</Text>
+                    <Text style={styles.alertToolbarButtonText}>Khôi phục</Text>
                   </Pressable>
                 ) : null}
               </View>
