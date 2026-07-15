@@ -9,6 +9,8 @@ const router = express.Router();
 router.use(protect);
 router.use(authorize(USER_ROLES.OWNER));
 
+router.get("/analytics/revenue", ownerController.getRevenueAnalytics);
+
 router
   .route("/products")
   .get(ownerController.getProducts)

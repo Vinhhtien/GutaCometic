@@ -26,6 +26,7 @@ import { OwnerProduct } from "@/types/owner";
 type ProductFormState = {
   brand: string;
   category: string;
+  costPrice: string;
   description: string;
   expiryDate: string;
   image: string;
@@ -41,6 +42,7 @@ type ProductFormState = {
 const EMPTY_FORM: ProductFormState = {
   brand: "",
   category: "",
+  costPrice: "",
   description: "",
   expiryDate: "",
   image: "",
@@ -78,7 +80,11 @@ export default function OwnerProductsScreen() {
       }
 
       try {
-        mode === "refresh" ? setIsRefreshing(true) : setIsLoading(true);
+        if (mode === "refresh") {
+          setIsRefreshing(true);
+        } else {
+          setIsLoading(true);
+        }
         const nextProducts = await getOwnerProducts(token, { includeInactive: true });
         setProducts(nextProducts);
       } catch (error) {
@@ -121,6 +127,10 @@ export default function OwnerProductsScreen() {
     setForm({
       brand: product.brand,
       category: product.category,
+      costPrice:
+        product.costPrice === null || product.costPrice === undefined
+          ? ""
+          : String(product.costPrice),
       description: product.description || "",
       expiryDate: product.expiryDate || "",
       image: product.image || "",
@@ -149,6 +159,14 @@ export default function OwnerProductsScreen() {
       return;
     }
 
+    if (
+      payload.costPrice !== null &&
+      (!Number.isFinite(payload.costPrice) || payload.costPrice < 0)
+    ) {
+      Alert.alert("Giá vốn không hợp lệ", "Vui lòng nhập giá vốn là số lớn hơn hoặc bằng 0.");
+      return;
+    }
+
     try {
       const updated = await updateOwnerProduct(token, product._id, {
         isActive: !product.isActive,
@@ -174,6 +192,7 @@ export default function OwnerProductsScreen() {
     const payload = {
       brand: form.brand,
       category: form.category,
+      costPrice: form.costPrice ? Number(form.costPrice) : null,
       description: form.description,
       expiryDate: form.expiryDate,
       image: form.image,
@@ -304,6 +323,12 @@ export default function OwnerProductsScreen() {
                     </Text>
                   ) : null}
                 </View>
+                <Text style={styles.costPriceText}>
+                  Giá vốn:{" "}
+                  {typeof product.costPrice === "number"
+                    ? formatCurrency(product.costPrice)
+                    : "Chưa thiết lập"}
+                </Text>
 
                 <Text numberOfLines={2} style={styles.descriptionText}>
                   {product.description || "Chưa có mô tả chi tiết cho sản phẩm này."}
@@ -366,6 +391,8 @@ export default function OwnerProductsScreen() {
                 value={form.description}
                 onChangeText={(value) => setForm((current) => ({ ...current, description: value }))}
               />
+
+              <Input label="Giá vốn / giá nhập" keyboardType="number-pad" value={form.costPrice} onChangeText={(value) => setForm((current) => ({ ...current, costPrice: value.replace(/[^0-9]/g, "") }))} />
 
               <Pressable disabled={isSaving} onPress={handleSubmit} style={styles.submitButton}>
                 {isSaving ? (
@@ -525,6 +552,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "800",
     textDecorationLine: "line-through",
+  },
+  costPriceText: {
+    marginTop: 6,
+    color: "#52605a",
+    fontSize: 12,
+    fontWeight: "800",
   },
   descriptionText: {
     marginTop: 8,

@@ -14,6 +14,15 @@ const getProducts = async (req, res, next) => {
   }
 };
 
+const getRevenueAnalytics = async (req, res, next) => {
+  try {
+    const analytics = await ownerService.getRevenueAnalytics();
+    res.json({ analytics });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const createProduct = async (req, res, next) => {
   try {
     const product = await ownerService.createManagedProduct(req.body);
@@ -134,6 +143,7 @@ module.exports = {
   createStore,
   createTransfer,
   getProducts,
+  getRevenueAnalytics,
   getStaff,
   getStores,
   getTransfers,

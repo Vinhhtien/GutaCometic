@@ -20,7 +20,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { useAuth } from "@/contexts/AuthContext";
 import { getErrorMessage } from "@/services/api";
 import {
-  confirmIncomingTransfer,
   createInventoryAdjustment,
   getIncomingTransfers,
   getInventoryAlerts,
@@ -44,6 +43,7 @@ const ADJUSTMENT_LABELS: Record<InventoryAdjustmentType, string> = {
   OTHER: "Khác",
 };
 
+const MAX_STOCK_RECEIVE_QUANTITY = 1000;
 const PRODUCT_PICKER_LIMIT = 20;
 
 type InventoryActionMode = "receive" | "writeoff";
@@ -211,9 +211,11 @@ export default function OwnerInventoryScreen() {
 
     try {
       setProcessingId(transfer._id);
-      await confirmIncomingTransfer(token, transfer._id);
-      await loadInventory(selectedStoreId, "refresh");
-      Alert.alert("Đã nhận hàng", "Phiếu điều chuyển đã được xác nhận thành công.");
+      Alert.alert(
+        "Theo nghiệp vụ mới",
+        "Manager của cửa hàng đích sẽ là người xác nhận nhập điều chuyển ở màn hình kho chi nhánh."
+      );
+      return;
     } catch (error) {
       Alert.alert("Không xác nhận được", getErrorMessage(error));
     } finally {
@@ -230,6 +232,14 @@ export default function OwnerInventoryScreen() {
 
     if (!Number.isInteger(parsedQuantity) || parsedQuantity <= 0) {
       Alert.alert("Số lượng không hợp lệ", "Vui lòng nhập số lượng lớn hơn 0.");
+      return;
+    }
+
+    if (actionMode === "receive" && parsedQuantity > MAX_STOCK_RECEIVE_QUANTITY) {
+      Alert.alert(
+        "Vuot gioi han nhap kho",
+        `Moi lan nhap kho chi duoc toi da ${MAX_STOCK_RECEIVE_QUANTITY} san pham.`
+      );
       return;
     }
 
@@ -583,11 +593,27 @@ export default function OwnerInventoryScreen() {
                 <TextInput
                   keyboardType="number-pad"
                   onChangeText={(value) =>
-                    setQuantity(value.replace(/[^0-9]/g, ""))
+                    setQuantity(
+                      actionMode === "receive"
+                        ? value.replace(/[^0-9]/g, "")
+                          ? String(
+                              Math.min(
+                                Number.parseInt(value.replace(/[^0-9]/g, ""), 10),
+                                MAX_STOCK_RECEIVE_QUANTITY
+                              )
+                            )
+                          : ""
+                        : value.replace(/[^0-9]/g, "")
+                    )
                   }
                   style={styles.input}
                   value={quantity}
                 />
+                {actionMode === "receive" ? (
+                  <Text style={styles.receiveLimitText}>
+                    Tối đa mỗi lần nhập: {MAX_STOCK_RECEIVE_QUANTITY}
+                  </Text>
+                ) : null}
 
                 <Text style={styles.inputLabel}>Ghi chú</Text>
                 <TextInput
@@ -878,6 +904,13 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#e2e7df",
     color: "#1f2522",
+    fontWeight: "800",
+  },
+  receiveLimitText: {
+    marginTop: -2,
+    marginBottom: 10,
+    color: "#52605a",
+    fontSize: 12,
     fontWeight: "800",
   },
   noteInput: { minHeight: 86, paddingTop: 12 },

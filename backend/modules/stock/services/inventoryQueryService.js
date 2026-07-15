@@ -12,6 +12,7 @@ const { runInTransaction } = require("./transactionService");
 
 const LOW_STOCK_WARNING_THRESHOLD = 10;
 const EXPIRY_WARNING_DAYS = 60;
+const MAX_STOCK_RECEIVE_QUANTITY = 1000;
 const UNIVERSAL_SKIN_TYPE = "Da thường/Mọi loại da";
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
@@ -351,6 +352,18 @@ const receiveRestockRequest = async ({
     throw new AppError("Received quantity is invalid", 400, "INVALID_RECEIVED_QUANTITY");
   }
 
+  if (quantity > MAX_STOCK_RECEIVE_QUANTITY) {
+    throw new AppError(
+      `Received quantity cannot exceed ${MAX_STOCK_RECEIVE_QUANTITY}`,
+      400,
+      "RECEIVED_QUANTITY_LIMIT_EXCEEDED",
+      {
+        maxAllowedQuantity: MAX_STOCK_RECEIVE_QUANTITY,
+        receivedQuantity: quantity,
+      }
+    );
+  }
+
   return runInTransaction(async (session) => {
     const request = await InventoryRequest.findById(requestId).session(session);
 
@@ -367,6 +380,18 @@ const receiveRestockRequest = async ({
 
     if (request.status !== "OPEN") {
       throw new AppError("This restock request is already closed", 409, "REQUEST_CLOSED");
+    }
+
+    if (quantity > request.requestedQuantity) {
+      throw new AppError(
+        "Received quantity cannot exceed the requested quantity",
+        400,
+        "RECEIVED_QUANTITY_EXCEEDS_REQUEST",
+        {
+          receivedQuantity: quantity,
+          requestedQuantity: request.requestedQuantity,
+        }
+      );
     }
 
     await inventoryMutationService.receiveStock(
@@ -422,6 +447,18 @@ const receiveDirectStock = async ({
 
   if (!Number.isInteger(receivedQuantity) || receivedQuantity < 1) {
     throw new AppError("Received quantity is invalid", 400, "INVALID_RECEIVED_QUANTITY");
+  }
+
+  if (receivedQuantity > MAX_STOCK_RECEIVE_QUANTITY) {
+    throw new AppError(
+      `Received quantity cannot exceed ${MAX_STOCK_RECEIVE_QUANTITY}`,
+      400,
+      "RECEIVED_QUANTITY_LIMIT_EXCEEDED",
+      {
+        maxAllowedQuantity: MAX_STOCK_RECEIVE_QUANTITY,
+        receivedQuantity,
+      }
+    );
   }
 
   return runInTransaction(async (session) => {
@@ -567,6 +604,14 @@ const getIncomingTransfers = async ({ storeId, user }) => {
 
 const confirmIncomingTransfer = async ({ transferId, user }) =>
   runInTransaction(async (session) => {
+    if (user.role !== USER_ROLES.MANAGER) {
+      throw new AppError(
+        "Only the destination store manager can confirm incoming transfers",
+        403,
+        "FORBIDDEN"
+      );
+    }
+
     const transfer = await StockTransfer.findById(transferId).session(session);
 
     if (!transfer) {

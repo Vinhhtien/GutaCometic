@@ -79,7 +79,7 @@ router.get(
 
 router.post(
   "/transfers/:transferId/confirm",
-  authorize(USER_ROLES.OWNER, USER_ROLES.MANAGER),
+  authorize(USER_ROLES.MANAGER),
   inventoryController.confirmIncomingTransfer
 );
 

@@ -13,6 +13,7 @@ export type Product = {
   image: string;
   images?: string[];
   price: number;
+  costPrice?: number | null;
   originalPrice?: number | null;
   category: string;
   skinTypes: string[];

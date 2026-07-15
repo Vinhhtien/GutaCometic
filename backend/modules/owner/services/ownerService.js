@@ -1,4 +1,7 @@
 const mongoose = require("mongoose");
+const InventoryAdjustment = require("../../../models/InventoryAdjustment");
+const InventoryReceipt = require("../../../models/InventoryReceipt");
+const Order = require("../../../models/Order");
 const Product = require("../../../models/Product");
 const Store = require("../../../models/Store");
 const StoreInventory = require("../../../models/StoreInventory");
@@ -7,7 +10,11 @@ const User = require("../../../models/User");
 const AppError = require("../../../utils/AppError");
 const { runInTransaction } = require("../../stock/services/transactionService");
 const inventoryMutationService = require("../../stock/services/inventoryService");
-const { STORE_TYPES, USER_ROLES } = require("../../../constants/business");
+const {
+  PAYMENT_STATUSES,
+  STORE_TYPES,
+  USER_ROLES,
+} = require("../../../constants/business");
 const {
   normalizeEmail,
   normalizePhone,
@@ -153,6 +160,13 @@ const buildProductPayload = (payload, { isCreate = false } = {}) => {
     nextPayload.price = parseNonNegativeNumber(payload.price, "price", {
       required: true,
     });
+  }
+
+  if (payload.costPrice !== undefined) {
+    nextPayload.costPrice =
+      payload.costPrice === null || payload.costPrice === ""
+        ? null
+        : parseNonNegativeNumber(payload.costPrice, "costPrice");
   }
 
   if (payload.originalPrice !== undefined) {
@@ -420,6 +434,193 @@ const getManagedStores = async ({ includeInactive = true } = {}) => {
   return Store.find(query).sort({ isActive: -1, name: 1 }).lean();
 };
 
+const getRevenueAnalytics = async () => {
+  const now = new Date();
+  const currentMonth = now.getMonth();
+  const currentYear = now.getFullYear();
+
+  const [
+    adjustments,
+    products,
+    receipts,
+    paidOrders,
+    stores,
+    storeInventories,
+    totalOrders,
+  ] = await Promise.all([
+    InventoryAdjustment.find({}).select("productId quantity storeId").lean(),
+    Product.find({}).select("brand category costPrice name price sku").lean(),
+    InventoryReceipt.find({}).select("productId quantity source storeId").lean(),
+    Order.find({ paymentStatus: PAYMENT_STATUSES.PAID })
+      .select("channel createdAt items paidAt storeId totalPrice updatedAt")
+      .lean(),
+    Store.find({}).lean(),
+    StoreInventory.find({})
+      .select("productId storeId totalStock")
+      .lean(),
+    Order.countDocuments({}),
+  ]);
+
+  const productById = new Map(products.map((product) => [String(product._id), product]));
+  const missingCostProductIds = new Set();
+  const storeAnalyticsMap = new Map(
+    stores.map((store) => [
+      String(store._id),
+      {
+        store,
+        orderCount: 0,
+        paidOrderCount: 0,
+        revenue: 0,
+        onlineRevenue: 0,
+        offlineRevenue: 0,
+        soldCost: 0,
+        grossProfit: 0,
+        writeOffCost: 0,
+        stockInCost: 0,
+        inventoryValue: 0,
+        totalStockUnits: 0,
+      },
+    ])
+  );
+
+  const resolveCostPrice = (productId) => {
+    const product = productById.get(String(productId));
+    const costPrice = product?.costPrice;
+
+    if (typeof costPrice === "number" && Number.isFinite(costPrice)) {
+      return costPrice;
+    }
+
+    if (productId) {
+      missingCostProductIds.add(String(productId));
+    }
+
+    return null;
+  };
+
+  const totalPaidRevenue = paidOrders.reduce((sum, order) => sum + order.totalPrice, 0);
+  let inventoryValue = 0;
+  let monthlyRevenue = 0;
+  let monthlySoldCost = 0;
+  let soldCost = 0;
+  let stockInCost = 0;
+  let writeOffCost = 0;
+
+  for (const order of paidOrders) {
+    const storeAnalytics = storeAnalyticsMap.get(String(order.storeId || ""));
+    const referenceDate = new Date(order.paidAt || order.updatedAt || order.createdAt);
+    const orderSoldCost = order.items.reduce((sum, item) => {
+      const costPrice = resolveCostPrice(item.productId);
+      return costPrice === null ? sum : sum + costPrice * item.quantity;
+    }, 0);
+
+    soldCost += orderSoldCost;
+
+    if (
+      referenceDate.getMonth() === currentMonth &&
+      referenceDate.getFullYear() === currentYear
+    ) {
+      monthlyRevenue += order.totalPrice;
+      monthlySoldCost += orderSoldCost;
+    }
+
+    if (!storeAnalytics) {
+      continue;
+    }
+
+    storeAnalytics.orderCount += 1;
+    storeAnalytics.paidOrderCount += 1;
+    storeAnalytics.revenue += order.totalPrice;
+    storeAnalytics.soldCost += orderSoldCost;
+
+    if (order.channel === "ONLINE") {
+      storeAnalytics.onlineRevenue += order.totalPrice;
+    } else {
+      storeAnalytics.offlineRevenue += order.totalPrice;
+    }
+  }
+
+  for (const receipt of receipts) {
+    const costPrice = resolveCostPrice(receipt.productId);
+
+    if (costPrice === null) {
+      continue;
+    }
+
+    const receiptValue = costPrice * receipt.quantity;
+    const storeAnalytics = storeAnalyticsMap.get(String(receipt.storeId || ""));
+
+    stockInCost += receiptValue;
+
+    if (storeAnalytics) {
+      storeAnalytics.stockInCost += receiptValue;
+    }
+  }
+
+  for (const adjustment of adjustments) {
+    const costPrice = resolveCostPrice(adjustment.productId);
+
+    if (costPrice === null) {
+      continue;
+    }
+
+    const adjustmentValue = costPrice * adjustment.quantity;
+    const storeAnalytics = storeAnalyticsMap.get(String(adjustment.storeId || ""));
+
+    writeOffCost += adjustmentValue;
+
+    if (storeAnalytics) {
+      storeAnalytics.writeOffCost += adjustmentValue;
+    }
+  }
+
+  for (const inventory of storeInventories) {
+    const costPrice = resolveCostPrice(inventory.productId);
+    const stockUnits = Number(inventory.totalStock || 0);
+    const inventoryEntryValue = costPrice === null ? 0 : costPrice * stockUnits;
+    const storeAnalytics = storeAnalyticsMap.get(String(inventory.storeId || ""));
+
+    inventoryValue += inventoryEntryValue;
+
+    if (storeAnalytics) {
+      storeAnalytics.inventoryValue += inventoryEntryValue;
+      storeAnalytics.totalStockUnits += stockUnits;
+    }
+  }
+
+  const storesAnalytics = [...storeAnalyticsMap.values()]
+    .map((entry) => ({
+      ...entry,
+      estimatedNetProfit: entry.revenue - entry.soldCost - entry.writeOffCost,
+      grossProfit: entry.revenue - entry.soldCost,
+    }))
+    .sort((left, right) => right.revenue - left.revenue);
+
+  return {
+    stores: storesAnalytics,
+    summary: {
+      averageOrderValue: paidOrders.length > 0 ? totalPaidRevenue / paidOrders.length : 0,
+      estimatedNetProfit: totalPaidRevenue - soldCost - writeOffCost,
+      grossProfit: totalPaidRevenue - soldCost,
+      inventoryValue,
+      missingCostProductCount: missingCostProductIds.size,
+      missingCostProducts: [...missingCostProductIds]
+        .map((productId) => productById.get(productId))
+        .filter(Boolean)
+        .slice(0, 5)
+        .map((product) => product.name),
+      monthlyGrossProfit: monthlyRevenue - monthlySoldCost,
+      monthlyRevenue,
+      paidOrders: paidOrders.length,
+      paidRevenue: totalPaidRevenue,
+      soldCost,
+      stockInCost,
+      totalOrders,
+      writeOffCost,
+    },
+  };
+};
+
 const createManagedStore = async (payload) => {
   const nextPayload = buildStorePayload(payload, { isCreate: true });
 
@@ -642,6 +843,7 @@ module.exports = {
   createManagedStore,
   createStockTransfer,
   getManagedProducts,
+  getRevenueAnalytics,
   getManagedStaff,
   getManagedStores,
   getStockTransfers,

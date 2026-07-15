@@ -4,6 +4,7 @@ import {
   ManagedStore,
   OwnerProduct,
   OwnerProductPayload,
+  OwnerRevenueAnalytics,
   OwnerStaffPayload,
   OwnerStorePayload,
   OwnerTransfer,
@@ -39,6 +40,15 @@ export const getOwnerProducts = async (
   );
 
   return response.products;
+};
+
+export const getOwnerRevenueAnalytics = async (token: string) => {
+  const response = await apiRequest<{ analytics: OwnerRevenueAnalytics }>(
+    "/owner/analytics/revenue",
+    { token }
+  );
+
+  return response.analytics;
 };
 
 export const createOwnerProduct = async (

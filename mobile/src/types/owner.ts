@@ -17,6 +17,7 @@ export type OwnerProductPayload = {
   brand: string;
   category: string;
   price: number;
+  costPrice?: number | null;
   originalPrice?: number | null;
   description?: string;
   image?: string;
@@ -64,8 +65,37 @@ export type ChainRevenueStore = {
   revenue: number;
   onlineRevenue: number;
   offlineRevenue: number;
+  soldCost: number;
+  grossProfit: number;
+  writeOffCost: number;
+  stockInCost: number;
+  inventoryValue: number;
+  totalStockUnits: number;
+  estimatedNetProfit: number;
 };
 
 export type OwnerTransfer = IncomingStockTransfer;
 
 export type OwnerProduct = Product;
+
+export type OwnerRevenueSummary = {
+  averageOrderValue: number;
+  estimatedNetProfit: number;
+  grossProfit: number;
+  inventoryValue: number;
+  missingCostProductCount: number;
+  missingCostProducts: string[];
+  monthlyGrossProfit: number;
+  monthlyRevenue: number;
+  paidOrders: number;
+  paidRevenue: number;
+  soldCost: number;
+  stockInCost: number;
+  totalOrders: number;
+  writeOffCost: number;
+};
+
+export type OwnerRevenueAnalytics = {
+  summary: OwnerRevenueSummary;
+  stores: ChainRevenueStore[];
+};

@@ -49,7 +49,36 @@ const ADJUSTMENT_LABELS: Record<InventoryAdjustmentType, string> = {
   OTHER: "Khác",
 };
 
+const ALERT_PREVIEW_LIMIT = 6;
+const MAX_STOCK_RECEIVE_QUANTITY = 1000;
 const PRODUCT_PICKER_LIMIT = 20;
+const getAlertKey = (alert: InventoryAlert) => `${alert.inventoryId}-${alert.type}`;
+
+const normalizeQuantityValue = (
+  value: string,
+  {
+    max,
+    min = 1,
+  }: {
+    max?: number;
+    min?: number;
+  } = {}
+) => {
+  const digits = value.replace(/[^0-9]/g, "");
+
+  if (!digits) {
+    return "";
+  }
+
+  const parsed = Number.parseInt(digits, 10);
+
+  if (!Number.isInteger(parsed)) {
+    return "";
+  }
+
+  const normalized = Math.max(min, max ? Math.min(parsed, max) : parsed);
+  return String(normalized);
+};
 
 export default function ManagerInventoryScreen() {
   const { activeStore, token, user } = useAuth();
@@ -79,6 +108,8 @@ export default function ManagerInventoryScreen() {
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  const [hiddenAlertKeys, setHiddenAlertKeys] = useState<string[]>([]);
+  const [isAlertListExpanded, setIsAlertListExpanded] = useState(false);
 
   const loadData = useCallback(
     async (mode: "initial" | "refresh" = "initial") => {
@@ -87,7 +118,11 @@ export default function ManagerInventoryScreen() {
       }
 
       try {
-        mode === "refresh" ? setIsRefreshing(true) : setIsLoading(true);
+        if (mode === "refresh") {
+          setIsRefreshing(true);
+        } else {
+          setIsLoading(true);
+        }
         const [
           nextAlerts,
           nextRequests,
@@ -103,6 +138,8 @@ export default function ManagerInventoryScreen() {
             getProductInventory(token, { limit: PRODUCT_PICKER_LIMIT }).catch(() => []),
           ]);
         setAlerts(nextAlerts);
+        setHiddenAlertKeys([]);
+        setIsAlertListExpanded(false);
         setRequests(nextRequests);
         setAdjustments(nextAdjustments);
         setTransfers(nextTransfers);
@@ -131,6 +168,19 @@ export default function ManagerInventoryScreen() {
     [adjustments.length, alerts.length, requests.length, transfers.length]
   );
 
+  const visibleAlerts = useMemo(
+    () => alerts.filter((alert) => !hiddenAlertKeys.includes(getAlertKey(alert))),
+    [alerts, hiddenAlertKeys]
+  );
+
+  const renderedAlerts = useMemo(
+    () =>
+      isAlertListExpanded
+        ? visibleAlerts
+        : visibleAlerts.slice(0, ALERT_PREVIEW_LIMIT),
+    [isAlertListExpanded, visibleAlerts]
+  );
+
   const openReceiveModal = (request: InventoryRestockRequest) => {
     setSelectedRequest(request);
     setReceiveQuantity(String(request.requestedQuantity));
@@ -140,6 +190,7 @@ export default function ManagerInventoryScreen() {
     if (!token || processingId) {
       return;
     }
+
 
     try {
       setProcessingId(request._id);
@@ -166,6 +217,20 @@ export default function ManagerInventoryScreen() {
 
     if (!Number.isInteger(quantity) || quantity <= 0) {
       Alert.alert("Số lượng không hợp lệ", "Vui lòng nhập số lượng hàng đã về.");
+      return;
+    }
+    if (quantity > MAX_STOCK_RECEIVE_QUANTITY) {
+      Alert.alert(
+        "Vuot gioi han nhap kho",
+        `Moi lan nhap kho chi duoc toi da ${MAX_STOCK_RECEIVE_QUANTITY} san pham.`
+      );
+      return;
+    }
+    if (quantity > selectedRequest.requestedQuantity) {
+      Alert.alert(
+        "Vuot so luong de xuat",
+        "Phieu nay chi cho nhap toi da " + selectedRequest.requestedQuantity + " san pham."
+      );
       return;
     }
 
@@ -239,6 +304,14 @@ export default function ManagerInventoryScreen() {
 
     if (!Number.isInteger(quantity) || quantity <= 0) {
       Alert.alert("Số lượng không hợp lệ", "Vui lòng nhập số lượng hàng về kho.");
+      return;
+    }
+
+    if (quantity > MAX_STOCK_RECEIVE_QUANTITY) {
+      Alert.alert(
+        "Vuot gioi han nhap kho",
+        `Moi lan nhap kho chi duoc toi da ${MAX_STOCK_RECEIVE_QUANTITY} san pham.`
+      );
       return;
     }
 
@@ -425,11 +498,42 @@ export default function ManagerInventoryScreen() {
               </View>
 
               <SectionTitle title="Cảnh báo hệ thống" />
-              {alerts.length === 0 ? (
+              <View style={styles.alertToolbar}>
+                {visibleAlerts.length > ALERT_PREVIEW_LIMIT ? (
+                  <Pressable
+                    onPress={() => setIsAlertListExpanded((current) => !current)}
+                    style={styles.alertToolbarButton}
+                  >
+                    <Text style={styles.alertToolbarButtonText}>
+                      {isAlertListExpanded ? "Thu gon" : "Xem them"}
+                    </Text>
+                  </Pressable>
+                ) : null}
+                {alerts.length > 0 ? (
+                  <Pressable
+                    onPress={() => {
+                      setHiddenAlertKeys(alerts.map(getAlertKey));
+                      setIsAlertListExpanded(false);
+                    }}
+                    style={styles.alertToolbarButton}
+                  >
+                    <Text style={styles.alertToolbarButtonText}>Xoa tat ca</Text>
+                  </Pressable>
+                ) : null}
+                {hiddenAlertKeys.length > 0 ? (
+                  <Pressable
+                    onPress={() => setHiddenAlertKeys([])}
+                    style={styles.alertToolbarButton}
+                  >
+                    <Text style={styles.alertToolbarButtonText}>Khoi phuc</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+              {visibleAlerts.length === 0 ? (
                 <EmptyPanel text="Chưa có sản phẩm dưới 10 hoặc sắp hết hạn." />
               ) : (
                 <View style={styles.cardList}>
-                  {alerts.slice(0, 8).map((alert) => (
+                  {renderedAlerts.map((alert) => (
                     <View
                       key={`${alert.inventoryId}-${alert.type}`}
                       style={styles.alertCard}
@@ -607,6 +711,7 @@ export default function ManagerInventoryScreen() {
 
       <ReceiveModal
         isProcessing={processingId === selectedRequest?._id}
+        maxQuantity={selectedRequest?.requestedQuantity || undefined}
         onClose={() => setSelectedRequest(null)}
         onConfirm={handleReceiveRequest}
         quantity={receiveQuantity}
@@ -705,6 +810,7 @@ function EmptyPanel({ text }: { text: string }) {
 
 function ReceiveModal({
   isProcessing,
+  maxQuantity,
   onClose,
   onConfirm,
   quantity,
@@ -712,6 +818,7 @@ function ReceiveModal({
   setQuantity,
 }: {
   isProcessing: boolean;
+  maxQuantity?: number;
   onClose: () => void;
   onConfirm: () => void;
   quantity: string;
@@ -738,13 +845,30 @@ function ReceiveModal({
               </Text>
               <TextInput
                 keyboardType="number-pad"
-                onChangeText={(value) => setQuantity(value.replace(/[^0-9]/g, ""))}
+                onChangeText={(value) =>
+                  setQuantity(
+                    normalizeQuantityValue(value, {
+                      max: Math.min(
+                        request.requestedQuantity,
+                        MAX_STOCK_RECEIVE_QUANTITY
+                      ),
+                    })
+                  )
+                }
                 placeholder="Số lượng hàng đã về"
                 placeholderTextColor="#8a948f"
                 style={styles.input}
                 value={quantity}
               />
-              <QuantityStepper quantity={quantity} setQuantity={setQuantity} />
+              <Text style={styles.sheetHint}>
+                Tối đa mỗi lần nhập:{" "}
+                {Math.min(request.requestedQuantity, MAX_STOCK_RECEIVE_QUANTITY)}
+              </Text>
+              <QuantityStepper
+                maxQuantity={maxQuantity}
+                quantity={quantity}
+                setQuantity={setQuantity}
+              />
               <Pressable
                 disabled={isProcessing}
                 onPress={onConfirm}
@@ -935,13 +1059,26 @@ function DirectReceiveModal({
 
             <TextInput
               keyboardType="number-pad"
-              onChangeText={(value) => setQuantity(value.replace(/[^0-9]/g, ""))}
+              onChangeText={(value) =>
+                setQuantity(
+                  normalizeQuantityValue(value, {
+                    max: MAX_STOCK_RECEIVE_QUANTITY,
+                  })
+                )
+              }
               placeholder="Số lượng hàng về kho"
               placeholderTextColor="#8a948f"
               style={styles.input}
               value={quantity}
             />
-            <QuantityStepper quantity={quantity} setQuantity={setQuantity} />
+            <Text style={styles.sheetHint}>
+              Tối đa mỗi lần nhập: {MAX_STOCK_RECEIVE_QUANTITY}
+            </Text>
+            <QuantityStepper
+              maxQuantity={MAX_STOCK_RECEIVE_QUANTITY}
+              quantity={quantity}
+              setQuantity={setQuantity}
+            />
             <TextInput
               multiline
               onChangeText={setNote}
@@ -1310,13 +1447,16 @@ function SheetHeader({ onClose, title }: { onClose: () => void; title: string })
 }
 
 function QuantityStepper({
+  maxQuantity,
   quantity,
   setQuantity,
 }: {
+  maxQuantity?: number;
   quantity: string;
   setQuantity: (value: string) => void;
 }) {
   const currentQuantity = Math.max(1, Number.parseInt(quantity || "1", 10) || 1);
+  const canIncrease = !maxQuantity || currentQuantity < maxQuantity;
 
   return (
     <View style={styles.quantityStepper}>
@@ -1328,10 +1468,13 @@ function QuantityStepper({
       </Pressable>
       <Text style={styles.quantityStepValue}>{currentQuantity}</Text>
       <Pressable
-        onPress={() => setQuantity(String(currentQuantity + 1))}
+        disabled={!canIncrease}
+        onPress={() =>
+          setQuantity(String(maxQuantity ? Math.min(currentQuantity + 1, maxQuantity) : currentQuantity + 1))
+        }
         style={styles.quantityStepButton}
       >
-        <Ionicons color="#252525" name="add" size={17} />
+        <Ionicons color={canIncrease ? "#252525" : "#9aa6a0"} name="add" size={17} />
       </Pressable>
     </View>
   );
@@ -1463,6 +1606,28 @@ const styles = StyleSheet.create({
     marginBottom: 10,
     color: "#1f2522",
     fontSize: 16,
+    fontWeight: "900",
+  },
+  alertToolbar: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: -2,
+    marginBottom: 10,
+  },
+  alertToolbarButton: {
+    minHeight: 32,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    borderRadius: 999,
+    backgroundColor: "#ffffff",
+    borderWidth: 1,
+    borderColor: "#d6ddd8",
+  },
+  alertToolbarButtonText: {
+    color: "#52605a",
+    fontSize: 12,
     fontWeight: "900",
   },
   cardList: { gap: 9 },
@@ -1681,6 +1846,13 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     fontWeight: "700",
   },
+  sheetHint: {
+    marginTop: 8,
+    marginBottom: 10,
+    color: "#52605a",
+    fontSize: 12,
+    fontWeight: "800",
+  },
   formLabel: {
     marginBottom: 7,
     color: "#52605a",
@@ -1811,3 +1983,5 @@ const styles = StyleSheet.create({
   typeChipText: { color: "#52605a", fontSize: 12, fontWeight: "900" },
   typeChipTextActive: { color: "#ffffff" },
 });
+
+
