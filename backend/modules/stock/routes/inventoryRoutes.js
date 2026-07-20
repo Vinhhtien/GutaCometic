@@ -71,6 +71,23 @@ router
     inventoryController.createInventoryAdjustment
   );
 
+router
+  .route("/return-requests")
+  .get(
+    authorize(USER_ROLES.OWNER, USER_ROLES.MANAGER),
+    inventoryController.getInventoryReturnRequests
+  )
+  .post(
+    authorize(USER_ROLES.MANAGER),
+    inventoryController.createInventoryReturnRequest
+  );
+
+router.patch(
+  "/return-requests/:requestId/review",
+  authorize(USER_ROLES.OWNER),
+  inventoryController.reviewInventoryReturnRequest
+);
+
 router.get(
   "/transfers/incoming",
   authorize(USER_ROLES.OWNER, USER_ROLES.MANAGER),

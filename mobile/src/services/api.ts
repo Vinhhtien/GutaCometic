@@ -21,7 +21,26 @@ const getMetroApiUrl = () => {
   return `${protocol}://${hostUri}/api`;
 };
 
-export const API_BASE_URL = getMetroApiUrl();
+const normalizeApiUrl = (value: string) => value.replace(/\/$/, "");
+
+const configuredApiUrl = process.env.EXPO_PUBLIC_API_BASE_URL?.trim();
+const configuredApiBaseUrl = configuredApiUrl
+  ? normalizeApiUrl(configuredApiUrl)
+  : null;
+const metroApiBaseUrl = getMetroApiUrl();
+
+const uniqueUrls = (urls: Array<string | null>) =>
+  [...new Set(urls.filter(Boolean))] as string[];
+
+const getApiBaseUrlsForPath = (path: string) => {
+  if (path.startsWith("/inventory/return-requests")) {
+    return uniqueUrls([configuredApiBaseUrl, metroApiBaseUrl]);
+  }
+
+  return uniqueUrls([metroApiBaseUrl, configuredApiBaseUrl]);
+};
+
+export const API_BASE_URL = metroApiBaseUrl;
 
 type ApiOptions = Omit<RequestInit, "body"> & {
   body?: unknown;
@@ -56,34 +75,60 @@ export async function apiRequest<T>(
     ? (JSON.parse(storedActiveStore) as Store)
     : null;
 
-  const response = await fetch(`${API_BASE_URL}${path}`, {
-    ...options,
-    headers: {
-      Accept: "application/json",
-      "Content-Type": "application/json",
-      ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      ...(activeStore?._id ? { "X-Active-Store-Id": activeStore._id } : {}),
-      ...headers,
-    },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
+  const requestBody = body === undefined ? undefined : JSON.stringify(body);
+  let lastError: unknown = null;
 
-  const data = (await response.json().catch(() => ({}))) as {
-    code?: string;
-    details?: Record<string, unknown>;
-    message?: string;
-  };
+  for (const baseUrl of getApiBaseUrlsForPath(path)) {
+    let response: Response;
 
-  if (!response.ok) {
-    throw new ApiError(
+    try {
+      response = await fetch(`${baseUrl}${path}`, {
+        ...options,
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+          ...(activeStore?._id ? { "X-Active-Store-Id": activeStore._id } : {}),
+          ...headers,
+        },
+        body: requestBody,
+      });
+    } catch (error) {
+      lastError = error;
+      continue;
+    }
+
+    const data = (await response.json().catch(() => ({}))) as {
+      code?: string;
+      details?: Record<string, unknown>;
+      message?: string;
+    };
+
+    if (response.ok) {
+      return data as T;
+    }
+
+    const apiError = new ApiError(
       data.message || "Request failed",
       response.status,
       data.code,
       data.details
     );
+
+    const shouldTryNextBaseUrl =
+      response.status === 404 &&
+      /route not found/i.test(data.message || "");
+
+    if (!shouldTryNextBaseUrl) {
+      throw apiError;
+    }
+
+    lastError = apiError;
   }
 
-  return data as T;
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("Unable to connect to the API server");
 }
 
 export function getErrorMessage(error: unknown) {

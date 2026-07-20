@@ -68,6 +68,17 @@ export type InventoryAdjustmentType =
   | "EXPIRED"
   | "OTHER";
 
+export type InventoryReturnReasonType =
+  | "DAMAGED"
+  | "DEFECTIVE"
+  | "EXPIRED"
+  | "OTHER";
+
+export type InventoryReturnRequestStatus =
+  | "PENDING"
+  | "APPROVED"
+  | "REJECTED";
+
 export type InventoryAdjustment = {
   _id: string;
   storeId: OrderStoreSummary & {
@@ -82,7 +93,11 @@ export type InventoryAdjustment = {
   updatedAt: string;
 };
 
-export type InventoryReceiptSource = "DIRECT" | "SALES_REQUEST" | "TRANSFER";
+export type InventoryReceiptSource =
+  | "DIRECT"
+  | "SALES_REQUEST"
+  | "TRANSFER"
+  | "RETURN_REJECTED";
 
 export type InventoryReceipt = {
   _id: string;
@@ -95,6 +110,25 @@ export type InventoryReceipt = {
   note?: string;
   referenceId?: string | null;
   receivedBy: InventoryRequestUser;
+  createdAt: string;
+  updatedAt: string;
+};
+
+export type InventoryReturnRequest = {
+  _id: string;
+  storeId: OrderStoreSummary & {
+    type?: string;
+  };
+  productId: Product;
+  quantity: number;
+  currentAvailableStock: number;
+  reasonType: InventoryReturnReasonType;
+  managerNote?: string;
+  reviewNote?: string;
+  status: InventoryReturnRequestStatus;
+  requestedBy: InventoryRequestUser;
+  reviewedBy?: InventoryRequestUser | null;
+  reviewedAt?: string | null;
   createdAt: string;
   updatedAt: string;
 };

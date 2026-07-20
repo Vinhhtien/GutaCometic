@@ -23,9 +23,11 @@ import {
   acknowledgeRestockRequest,
   confirmIncomingTransfer,
   createInventoryAdjustment,
+  createInventoryReturnRequest,
   getIncomingTransfers,
   getInventoryAdjustments,
   getInventoryAlerts,
+  getInventoryReturnRequests,
   getProductInventory,
   getRestockRequests,
   receiveDirectStock,
@@ -37,6 +39,8 @@ import {
   InventoryAdjustment,
   InventoryAdjustmentType,
   InventoryAlert,
+  InventoryReturnReasonType,
+  InventoryReturnRequest,
   InventoryRestockRequest,
   ProductInventory,
 } from "@/types/inventory";
@@ -45,6 +49,13 @@ const ADJUSTMENT_LABELS: Record<InventoryAdjustmentType, string> = {
   DAMAGED: "Hàng hỏng",
   DEFECTIVE: "Hàng lỗi",
   LOST: "Mất mát",
+  EXPIRED: "Hết hạn",
+  OTHER: "Khác",
+};
+
+const RETURN_REASON_LABELS: Record<InventoryReturnReasonType, string> = {
+  DAMAGED: "Hàng hỏng",
+  DEFECTIVE: "Hàng lỗi",
   EXPIRED: "Hết hạn",
   OTHER: "Khác",
 };
@@ -80,6 +91,14 @@ const normalizeQuantityValue = (
   return String(normalized);
 };
 
+const getAvailableStockForStore = (
+  item: ProductInventory,
+  storeId: string
+) =>
+  item.inventories.find(
+    (inventory) => String(inventory.store._id) === String(storeId)
+  )?.availableStock || 0;
+
 export default function ManagerInventoryScreen() {
   const { activeStore, token, user } = useAuth();
   const [alerts, setAlerts] = useState<InventoryAlert[]>([]);
@@ -89,8 +108,11 @@ export default function ManagerInventoryScreen() {
   const [products, setProducts] = useState<ProductInventory[]>([]);
   const [selectedAlert, setSelectedAlert] = useState<InventoryAlert | null>(null);
   const [isDirectReceiveVisible, setIsDirectReceiveVisible] = useState(false);
+  const [isReturnRequestVisible, setIsReturnRequestVisible] = useState(false);
   const [isWriteOffVisible, setIsWriteOffVisible] = useState(false);
   const [selectedDirectProduct, setSelectedDirectProduct] =
+    useState<ProductInventory | null>(null);
+  const [selectedReturnProduct, setSelectedReturnProduct] =
     useState<ProductInventory | null>(null);
   const [selectedWriteOffProduct, setSelectedWriteOffProduct] =
     useState<ProductInventory | null>(null);
@@ -103,8 +125,13 @@ export default function ManagerInventoryScreen() {
   const [receiveQuantity, setReceiveQuantity] = useState("");
   const [directReceiveQuantity, setDirectReceiveQuantity] = useState("1");
   const [directReceiveNote, setDirectReceiveNote] = useState("");
+  const [returnReasonType, setReturnReasonType] =
+    useState<InventoryReturnReasonType>("DAMAGED");
+  const [returnQuantity, setReturnQuantity] = useState("1");
+  const [returnNote, setReturnNote] = useState("");
   const [writeOffQuantity, setWriteOffQuantity] = useState("1");
   const [writeOffNote, setWriteOffNote] = useState("");
+  const [returnRequests, setReturnRequests] = useState<InventoryReturnRequest[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -127,6 +154,7 @@ export default function ManagerInventoryScreen() {
           nextAlerts,
           nextRequests,
           nextAdjustments,
+          nextReturnRequests,
           nextTransfers,
           nextProducts,
         ] =
@@ -134,6 +162,7 @@ export default function ManagerInventoryScreen() {
             getInventoryAlerts(token).catch(() => []),
             getRestockRequests(token, "OPEN").catch(() => []),
             getInventoryAdjustments(token).catch(() => []),
+            getInventoryReturnRequests(token, { status: "ALL" }).catch(() => []),
             getIncomingTransfers(token).catch(() => []),
             getProductInventory(token, { limit: PRODUCT_PICKER_LIMIT }).catch(() => []),
           ]);
@@ -142,6 +171,7 @@ export default function ManagerInventoryScreen() {
         setIsAlertListExpanded(false);
         setRequests(nextRequests);
         setAdjustments(nextAdjustments);
+        setReturnRequests(nextReturnRequests);
         setTransfers(nextTransfers);
         setProducts(nextProducts);
       } catch (error) {
@@ -162,10 +192,17 @@ export default function ManagerInventoryScreen() {
     () => ({
       alerts: alerts.length,
       requests: requests.length,
+      returns: returnRequests.filter((request) => request.status === "PENDING").length,
       transfers: transfers.length,
       adjustments: adjustments.length,
     }),
-    [adjustments.length, alerts.length, requests.length, transfers.length]
+    [
+      adjustments.length,
+      alerts.length,
+      requests.length,
+      returnRequests,
+      transfers.length,
+    ]
   );
 
   const visibleAlerts = useMemo(
@@ -295,6 +332,14 @@ export default function ManagerInventoryScreen() {
     setDirectReceiveNote("");
   };
 
+  const openReturnRequestModal = () => {
+    setIsReturnRequestVisible(true);
+    setSelectedReturnProduct(null);
+    setReturnReasonType("DAMAGED");
+    setReturnQuantity("1");
+    setReturnNote("");
+  };
+
   const handleDirectReceive = async () => {
     if (!token || !selectedDirectProduct || processingId) {
       return;
@@ -376,6 +421,55 @@ export default function ManagerInventoryScreen() {
     setAdjustmentType("DAMAGED");
     setWriteOffQuantity("1");
     setWriteOffNote("");
+  };
+
+  const handleCreateReturnRequest = async () => {
+    if (!token || !selectedReturnProduct || processingId) {
+      return;
+    }
+
+    const quantity = Number.parseInt(returnQuantity, 10);
+    const maxQuantity = getAvailableStockForStore(
+      selectedReturnProduct,
+      String(activeStore?._id || "")
+    );
+
+    if (!Number.isInteger(quantity) || quantity <= 0) {
+      Alert.alert(
+        "Số lượng không hợp lệ",
+        "Vui lòng nhập số lượng hàng lỗi cần gửi về kho tổng."
+      );
+      return;
+    }
+
+    if (quantity > maxQuantity) {
+      Alert.alert(
+        "Vượt số lượng hiện có",
+        `Sản phẩm này hiện chỉ còn ${maxQuantity} đơn vị khả dụng tại chi nhánh.`
+      );
+      return;
+    }
+
+    try {
+      setProcessingId(selectedReturnProduct.product._id);
+      const createdRequest = await createInventoryReturnRequest(token, {
+        managerNote: returnNote,
+        productId: selectedReturnProduct.product._id,
+        quantity,
+        reasonType: returnReasonType,
+      });
+      setReturnRequests((current) => [createdRequest, ...current]);
+      setIsReturnRequestVisible(false);
+      await loadData("refresh");
+      Alert.alert(
+        "Đã gửi yêu cầu trả hàng lỗi",
+        "Kho tổng sẽ xem xét đúng số lượng hàng lỗi trước khi duyệt loại khỏi tồn chi nhánh."
+      );
+    } catch (error) {
+      Alert.alert("Không gửi được yêu cầu", getErrorMessage(error));
+    } finally {
+      setProcessingId(null);
+    }
   };
 
   const handleCreateWriteOff = async () => {
@@ -467,7 +561,7 @@ export default function ManagerInventoryScreen() {
                 <MetricBox label="Cảnh báo" value={summary.alerts} />
                 <MetricBox label="Sales báo" value={summary.requests} />
                 <MetricBox label="Điều chuyển" value={summary.transfers} />
-                <MetricBox label="Kiểm kê" value={summary.adjustments} />
+                <MetricBox label="Trả lỗi" value={summary.returns} />
               </View>
 
               <View style={styles.managerFlowPanel}>
@@ -480,6 +574,13 @@ export default function ManagerInventoryScreen() {
                     >
                     <Ionicons color="#252525" name="add-circle-outline" size={17} />
                     <Text style={styles.directReceiveButtonText}>Nhập hàng</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={openReturnRequestModal}
+                      style={styles.returnRequestButton}
+                    >
+                      <Ionicons color="#9f2639" name="arrow-undo-outline" size={17} />
+                      <Text style={styles.returnRequestButtonText}>Báo trả lỗi</Text>
                     </Pressable>
                     <Pressable
                       onPress={openWriteOffModal}
@@ -611,6 +712,70 @@ export default function ManagerInventoryScreen() {
                 </View>
               )}
 
+              <SectionTitle title="Yêu cầu trả hàng lỗi" />
+              {returnRequests.length === 0 ? (
+                <EmptyPanel text="Chưa có yêu cầu trả hàng lỗi nào được gửi về kho tổng." />
+              ) : (
+                <View style={styles.cardList}>
+                  {returnRequests.slice(0, 6).map((request) => (
+                    <View key={request._id} style={styles.requestCard}>
+                      <View style={styles.requestHeader}>
+                        <View style={styles.cardCopy}>
+                          <Text numberOfLines={2} style={styles.cardTitle}>
+                            {request.productId.name}
+                          </Text>
+                          <Text style={styles.cardMeta}>
+                            {RETURN_REASON_LABELS[request.reasonType]} · Báo {request.quantity}
+                          </Text>
+                        </View>
+                        <View
+                          style={[
+                            styles.readStatusPill,
+                            request.status === "APPROVED"
+                              ? styles.readStatusPillDone
+                              : request.status === "REJECTED"
+                                ? styles.returnStatusRejected
+                                : null,
+                          ]}
+                        >
+                          <Text
+                            style={[
+                              styles.readStatusText,
+                              request.status === "APPROVED"
+                                ? styles.readStatusTextDone
+                                : request.status === "REJECTED"
+                                  ? styles.returnStatusRejectedText
+                                  : null,
+                            ]}
+                          >
+                            {request.status === "PENDING"
+                              ? "Chờ duyệt"
+                              : request.status === "APPROVED"
+                                ? "Đã duyệt"
+                                : "Từ chối"}
+                          </Text>
+                        </View>
+                      </View>
+                      <Text style={styles.reasonText}>
+                        Tồn lúc gửi: {request.currentAvailableStock} · Người gửi:{" "}
+                        {request.requestedBy.fullName}
+                      </Text>
+                      {request.managerNote ? (
+                        <Text style={styles.reasonText}>{request.managerNote}</Text>
+                      ) : null}
+                      {request.reviewNote ? (
+                        <Text style={styles.helperText}>
+                          Kho tổng phản hồi: {request.reviewNote}
+                        </Text>
+                      ) : (
+                        <Text style={styles.helperText}>
+                          Kho tổng sẽ xem xét số lượng hàng lỗi trước khi duyệt.
+                        </Text>
+                      )}
+                    </View>
+                  ))}
+                </View>
+              )}
               <SectionTitle title="Yêu cầu từ Sales" />
             </>
           }
@@ -734,6 +899,25 @@ export default function ManagerInventoryScreen() {
         setSelectedProduct={setSelectedDirectProduct}
         token={token}
         visible={isDirectReceiveVisible}
+      />
+
+      <ReturnRequestModal
+        currentStoreId={activeStore?._id || ""}
+        currentStoreName={activeStore?.name || "chi nhánh đang chọn"}
+        isProcessing={processingId === selectedReturnProduct?.product._id}
+        note={returnNote}
+        onClose={() => setIsReturnRequestVisible(false)}
+        onConfirm={handleCreateReturnRequest}
+        products={products}
+        quantity={returnQuantity}
+        reasonType={returnReasonType}
+        selectedProduct={selectedReturnProduct}
+        setNote={setReturnNote}
+        setQuantity={setReturnQuantity}
+        setReasonType={setReturnReasonType}
+        setSelectedProduct={setSelectedReturnProduct}
+        token={token}
+        visible={isReturnRequestVisible}
       />
 
       <AdjustmentModal
@@ -1096,6 +1280,268 @@ function DirectReceiveModal({
                 <ActivityIndicator color="#ffffff" />
               ) : (
                 <Text style={styles.primaryButtonText}>Cộng tồn kho</Text>
+              )}
+            </Pressable>
+          </ScrollView>
+        </View>
+      </KeyboardAvoidingView>
+    </Modal>
+  );
+}
+
+function ReturnRequestModal({
+  currentStoreId,
+  currentStoreName,
+  isProcessing,
+  note,
+  onClose,
+  onConfirm,
+  products,
+  quantity,
+  reasonType,
+  selectedProduct,
+  setNote,
+  setQuantity,
+  setReasonType,
+  setSelectedProduct,
+  token,
+  visible,
+}: {
+  currentStoreId: string;
+  currentStoreName: string;
+  isProcessing: boolean;
+  note: string;
+  onClose: () => void;
+  onConfirm: () => void;
+  products: ProductInventory[];
+  quantity: string;
+  reasonType: InventoryReturnReasonType;
+  selectedProduct: ProductInventory | null;
+  setNote: (value: string) => void;
+  setQuantity: (value: string) => void;
+  setReasonType: (value: InventoryReturnReasonType) => void;
+  setSelectedProduct: (product: ProductInventory) => void;
+  token: string | null;
+  visible: boolean;
+}) {
+  const [productSearch, setProductSearch] = useState("");
+  const [productOptions, setProductOptions] = useState<ProductInventory[]>(products);
+  const [isSearchingProducts, setIsSearchingProducts] = useState(false);
+
+  const currentStock = selectedProduct
+    ? getAvailableStockForStore(selectedProduct, currentStoreId)
+    : 0;
+  const availableProductOptions = productOptions.filter(
+    (item) => getAvailableStockForStore(item, currentStoreId) > 0
+  );
+  const cannotSubmit = !selectedProduct || currentStock < 1 || isProcessing;
+
+  useEffect(() => {
+    if (!visible) {
+      return;
+    }
+
+    const keyword = productSearch.trim().toLowerCase();
+
+    if (!token) {
+      setProductOptions(products);
+      return;
+    }
+
+    let isCancelled = false;
+    const timer = setTimeout(async () => {
+      try {
+        setIsSearchingProducts(true);
+        const nextProducts = await getProductInventory(token, {
+          limit: PRODUCT_PICKER_LIMIT,
+          search: keyword || undefined,
+        });
+
+        if (!isCancelled) {
+          setProductOptions(nextProducts);
+        }
+      } catch {
+        if (!isCancelled) {
+          setProductOptions(keyword ? [] : products);
+        }
+      } finally {
+        if (!isCancelled) {
+          setIsSearchingProducts(false);
+        }
+      }
+    }, keyword ? 250 : 0);
+
+    return () => {
+      isCancelled = true;
+      clearTimeout(timer);
+    };
+  }, [productSearch, products, token, visible]);
+
+  const productResultText = productSearch.trim()
+    ? `Đang hiển thị tối đa ${PRODUCT_PICKER_LIMIT} kết quả phù hợp`
+    : `Đang hiển thị ${availableProductOptions.length} sản phẩm còn tồn tại chi nhánh. Tìm tên hoặc SKU để chọn nhanh.`;
+
+  return (
+    <Modal animationType="slide" transparent visible={visible}>
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        style={styles.modalOverlay}
+      >
+        <View style={styles.sheet}>
+          <SheetHeader onClose={onClose} title="Gửi yêu cầu trả hàng lỗi" />
+          <ScrollView
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            <Text style={styles.sheetMeta}>
+              Báo số lượng hàng lỗi thực tế để kho tổng xem xét. Chỉ gửi đúng phần bị lỗi,
+              không cần trả toàn bộ lô hàng.
+            </Text>
+            <Text style={styles.formLabel}>Chọn sản phẩm cần báo trả</Text>
+            <View style={styles.productSearchBox}>
+              <Ionicons color="#69756f" name="search-outline" size={18} />
+              <TextInput
+                autoCapitalize="none"
+                onChangeText={setProductSearch}
+                placeholder="Tìm theo tên, SKU, thương hiệu..."
+                placeholderTextColor="#8a948f"
+                style={styles.productSearchInput}
+                value={productSearch}
+              />
+              {productSearch ? (
+                <Pressable onPress={() => setProductSearch("")}>
+                  <Ionicons color="#69756f" name="close-circle" size={19} />
+                </Pressable>
+              ) : null}
+            </View>
+            <Text style={styles.resultCountText}>{productResultText}</Text>
+            <View style={styles.productPickerList}>
+              {isSearchingProducts ? (
+                <View style={styles.productEmptyBox}>
+                  <ActivityIndicator color="#2d5a4b" />
+                  <Text style={styles.emptyText}>Đang tìm sản phẩm...</Text>
+                </View>
+              ) : availableProductOptions.length ? (
+                availableProductOptions.map((item) => {
+                  const itemAvailableStock = getAvailableStockForStore(
+                    item,
+                    currentStoreId
+                  );
+                  const isSelected =
+                    selectedProduct?.product._id === item.product._id;
+
+                  return (
+                    <Pressable
+                      key={item.product._id}
+                      onPress={() => {
+                        setSelectedProduct(item);
+                        setQuantity(
+                          normalizeQuantityValue(quantity || "1", {
+                            max: itemAvailableStock,
+                          })
+                        );
+                      }}
+                      style={[
+                        styles.productPickerRow,
+                        isSelected && styles.productPickerRowActive,
+                      ]}
+                    >
+                      <View style={styles.cardCopy}>
+                        <Text numberOfLines={1} style={styles.cardTitle}>
+                          {item.product.name}
+                        </Text>
+                        <Text style={styles.cardMeta}>
+                          {item.product.brand} · {item.product.category}
+                        </Text>
+                        <Text style={styles.cardMeta}>
+                          Còn {itemAvailableStock} khả dụng tại {currentStoreName}
+                        </Text>
+                      </View>
+                      {isSelected ? (
+                        <Ionicons color="#2d5a4b" name="checkmark-circle" size={21} />
+                      ) : null}
+                    </Pressable>
+                  );
+                })
+              ) : (
+                <View style={styles.productEmptyBox}>
+                  <Ionicons color="#69756f" name="cube-outline" size={22} />
+                  <Text style={styles.emptyText}>Không tìm thấy sản phẩm phù hợp.</Text>
+                </View>
+              )}
+            </View>
+
+            {selectedProduct ? (
+              <View style={styles.selectedProductBox}>
+                <Text style={styles.formLabel}>Tồn hiện tại tại {currentStoreName}</Text>
+                <Text style={styles.selectedProductStock}>{currentStock} khả dụng</Text>
+              </View>
+            ) : null}
+
+            <Text style={styles.formLabel}>Lý do trả hàng</Text>
+            <View style={styles.typeGrid}>
+              {(Object.keys(RETURN_REASON_LABELS) as InventoryReturnReasonType[]).map(
+                (item) => (
+                  <Pressable
+                    key={item}
+                    onPress={() => setReasonType(item)}
+                    style={[
+                      styles.typeChip,
+                      reasonType === item && styles.typeChipActive,
+                    ]}
+                  >
+                    <Text
+                      style={[
+                        styles.typeChipText,
+                        reasonType === item && styles.typeChipTextActive,
+                      ]}
+                    >
+                      {RETURN_REASON_LABELS[item]}
+                    </Text>
+                  </Pressable>
+                )
+              )}
+            </View>
+
+            <TextInput
+              keyboardType="number-pad"
+              onChangeText={(value) =>
+                setQuantity(
+                  normalizeQuantityValue(value, {
+                    max: currentStock || 1,
+                  })
+                )
+              }
+              placeholder="Số lượng hàng lỗi cần gửi về"
+              placeholderTextColor="#8a948f"
+              style={styles.input}
+              value={quantity}
+            />
+            <Text style={styles.sheetHint}>
+              Tối đa có thể báo trả lúc này: {currentStock}
+            </Text>
+            <QuantityStepper
+              maxQuantity={currentStock || 1}
+              quantity={quantity}
+              setQuantity={setQuantity}
+            />
+            <TextInput
+              multiline
+              onChangeText={setNote}
+              placeholder="Mô tả lỗi hoặc ghi chú cho kho tổng"
+              placeholderTextColor="#8a948f"
+              style={[styles.input, styles.noteInput]}
+              value={note}
+            />
+            <Pressable
+              disabled={cannotSubmit}
+              onPress={onConfirm}
+              style={[styles.primaryButton, cannotSubmit && styles.disabledButton]}
+            >
+              {isProcessing ? (
+                <ActivityIndicator color="#ffffff" />
+              ) : (
+                <Text style={styles.primaryButtonText}>Gửi yêu cầu trả lỗi</Text>
               )}
             </Pressable>
           </ScrollView>
@@ -1565,6 +2011,22 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900",
   },
+  returnRequestButton: {
+    flex: 1,
+    minHeight: 34,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    borderRadius: 8,
+    backgroundColor: "#fff5f0",
+  },
+  returnRequestButtonText: {
+    color: "#9f2639",
+    fontSize: 12,
+    fontWeight: "900",
+  },
   writeOffButton: {
     flex: 1,
     minHeight: 34,
@@ -1699,6 +2161,12 @@ const styles = StyleSheet.create({
   readStatusTextDone: {
     color: "#2d5a4b",
   },
+  returnStatusRejected: {
+    backgroundColor: "#fff1f3",
+  },
+  returnStatusRejectedText: {
+    color: "#9f2639",
+  },
   quantityBox: {
     width: 72,
     minHeight: 54,
@@ -1711,6 +2179,12 @@ const styles = StyleSheet.create({
   quantityLabel: { color: "#2d5a4b", fontSize: 10, fontWeight: "900" },
   reasonText: {
     color: "#52605a",
+    fontSize: 12,
+    lineHeight: 18,
+    fontWeight: "700",
+  },
+  helperText: {
+    color: "#69756f",
     fontSize: 12,
     lineHeight: 18,
     fontWeight: "700",

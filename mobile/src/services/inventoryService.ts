@@ -5,6 +5,8 @@ import {
   InventoryAdjustmentType,
   IncomingStockTransfer,
   InventoryReceipt,
+  InventoryReturnReasonType,
+  InventoryReturnRequest,
   InventoryRestockRequest,
   ProductInventory,
 } from "@/types/inventory";
@@ -210,6 +212,73 @@ export const getInventoryAdjustments = async (
   return response.adjustments;
 };
 
+export const getInventoryReturnRequests = async (
+  token: string,
+  options: {
+    status?: "ALL" | "PENDING" | "APPROVED" | "REJECTED";
+    storeId?: string;
+  } = {}
+) => {
+  const params = new URLSearchParams();
+
+  if (options.storeId) {
+    params.set("storeId", options.storeId);
+  }
+
+  if (options.status) {
+    params.set("status", options.status);
+  }
+
+  const query = params.toString();
+  const response = await apiRequest<{ requests: InventoryReturnRequest[] }>(
+    `/inventory/return-requests${query ? `?${query}` : ""}`,
+    { token }
+  );
+
+  return response.requests;
+};
+
+export const createInventoryReturnRequest = async (
+  token: string,
+  payload: {
+    managerNote?: string;
+    productId: string;
+    quantity: number;
+    reasonType: InventoryReturnReasonType;
+  }
+) => {
+  const response = await apiRequest<{ request: InventoryReturnRequest }>(
+    "/inventory/return-requests",
+    {
+      body: payload,
+      method: "POST",
+      token,
+    }
+  );
+
+  return response.request;
+};
+
+export const reviewInventoryReturnRequest = async (
+  token: string,
+  requestId: string,
+  payload: {
+    reviewNote?: string;
+    status: "APPROVED" | "REJECTED";
+  }
+) => {
+  const response = await apiRequest<{ request: InventoryReturnRequest }>(
+    `/inventory/return-requests/${requestId}/review`,
+    {
+      body: payload,
+      method: "PATCH",
+      token,
+    }
+  );
+
+  return response.request;
+};
+
 export const createInventoryAdjustment = async (
   token: string,
   payload: {
@@ -232,10 +301,33 @@ export const createInventoryAdjustment = async (
   return response.adjustment;
 };
 
-export const getIncomingTransfers = async (token: string, storeId?: string) => {
-  const query = storeId ? `?storeId=${storeId}` : "";
+export const getIncomingTransfers = async (
+  token: string,
+  optionsOrStoreId:
+    | string
+    | {
+        status?: "ALL" | "PENDING" | "CONFIRMED" | "CANCELLED";
+        storeId?: string;
+      } = {}
+) => {
+  const options =
+    typeof optionsOrStoreId === "string"
+      ? { storeId: optionsOrStoreId }
+      : optionsOrStoreId;
+
+  const params = new URLSearchParams();
+
+  if (options.storeId) {
+    params.set("storeId", options.storeId);
+  }
+
+  if (options.status) {
+    params.set("status", options.status);
+  }
+
+  const query = params.toString();
   const response = await apiRequest<{ transfers: IncomingStockTransfer[] }>(
-    `/inventory/transfers/incoming${query}`,
+    `/inventory/transfers/incoming${query ? `?${query}` : ""}`,
     { token }
   );
 

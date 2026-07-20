@@ -20,7 +20,7 @@ const inventoryReceiptSchema = new mongoose.Schema(
     },
     source: {
       type: String,
-      enum: ["DIRECT", "SALES_REQUEST", "TRANSFER"],
+      enum: ["DIRECT", "SALES_REQUEST", "TRANSFER", "RETURN_REJECTED"],
       required: true,
     },
     note: {

@@ -77,6 +77,7 @@ const TASKS: TaskCard[] = [
     description: "Xác nhận hàng từ kho tổng hoặc chi nhánh khác.",
     group: "store",
     icon: "swap-horizontal-outline",
+    href: "/manager/transfers" as Href,
   },
   {
     title: "Lịch sử đơn hàng",

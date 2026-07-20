@@ -53,6 +53,32 @@ const getTotalAvailableForStore = (
     0
   );
 
+const normalizeQuantityValue = (
+  value: string,
+  {
+    max,
+    min = 1,
+  }: {
+    max?: number;
+    min?: number;
+  } = {}
+) => {
+  const digits = value.replace(/[^0-9]/g, "");
+
+  if (!digits) {
+    return "";
+  }
+
+  const parsed = Number.parseInt(digits, 10);
+
+  if (!Number.isInteger(parsed)) {
+    return "";
+  }
+
+  const normalized = Math.max(min, max ? Math.min(parsed, max) : parsed);
+  return String(normalized);
+};
+
 const pickPreferredCentralStoreId = (
   stores: ManagedStore[],
   products: ProductInventory[],
@@ -507,8 +533,19 @@ export default function OwnerTransfersScreen() {
               ) : (
                 items.map((item) => (
                   <View key={item.productId} style={styles.itemCard}>
+                    {(() => {
+                      const productEntry = products.find(
+                        (entry) => entry.product._id === item.productId
+                      );
+                      const maxQuantity = productEntry
+                        ? getStoreAvailableStock(productEntry, fromStoreId)
+                        : 0;
+
+                      return (
+                        <>
                     <View style={styles.itemCopy}>
                       <Text style={styles.cardTitle}>{item.productName}</Text>
+                      <Text style={styles.cardMeta}>Tối đa khả dụng: {maxQuantity}</Text>
                     </View>
                     <TextInput
                       keyboardType="number-pad"
@@ -518,7 +555,9 @@ export default function OwnerTransfersScreen() {
                             entry.productId === item.productId
                               ? {
                                   ...entry,
-                                  quantity: value.replace(/[^0-9]/g, ""),
+                                  quantity: normalizeQuantityValue(value, {
+                                    max: maxQuantity || undefined,
+                                  }),
                                 }
                               : entry
                           )
@@ -536,6 +575,9 @@ export default function OwnerTransfersScreen() {
                     >
                       <Ionicons color="#9f2639" name="trash-outline" size={18} />
                     </Pressable>
+                        </>
+                      );
+                    })()}
                   </View>
                 ))
               )}

@@ -136,6 +136,51 @@ const createInventoryAdjustment = async (req, res, next) => {
   }
 };
 
+const getInventoryReturnRequests = async (req, res, next) => {
+  try {
+    const requests = await inventoryService.getInventoryReturnRequests({
+      status: req.query.status,
+      storeId: req.query.storeId,
+      user: req.user,
+    });
+
+    res.json({ requests });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const createInventoryReturnRequest = async (req, res, next) => {
+  try {
+    const request = await inventoryService.createInventoryReturnRequest({
+      managerNote: req.body.managerNote,
+      productId: req.body.productId,
+      quantity: req.body.quantity,
+      reasonType: req.body.reasonType,
+      user: req.user,
+    });
+
+    res.status(201).json({ request });
+  } catch (error) {
+    next(error);
+  }
+};
+
+const reviewInventoryReturnRequest = async (req, res, next) => {
+  try {
+    const request = await inventoryService.reviewInventoryReturnRequest({
+      requestId: req.params.requestId,
+      reviewNote: req.body.reviewNote,
+      status: req.body.status,
+      user: req.user,
+    });
+
+    res.json({ request });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const getInventoryAdjustments = async (req, res, next) => {
   try {
     const adjustments = await inventoryService.getInventoryAdjustments({
@@ -165,6 +210,7 @@ const getIncomingTransfers = async (req, res, next) => {
   try {
     const transfers = await inventoryService.getIncomingTransfers({
       storeId: req.query.storeId,
+      status: req.query.status,
       user: req.user,
     });
 
@@ -191,14 +237,17 @@ module.exports = {
   acknowledgeRestockRequest,
   confirmIncomingTransfer,
   createInventoryAdjustment,
+  createInventoryReturnRequest,
   createRestockRequest,
   getIncomingTransfers,
   getInventoryAdjustments,
   getInventoryReceipts,
+  getInventoryReturnRequests,
   getInventoryAlerts,
   getProductInventory,
   getRestockRequests,
   receiveDirectStock,
   receiveRestockRequest,
+  reviewInventoryReturnRequest,
   updateRestockRequestStatus,
 };

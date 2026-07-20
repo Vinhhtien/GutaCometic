@@ -25,13 +25,16 @@ import {
   getIncomingTransfers,
   getInventoryAlerts,
   getProductInventory,
+  getInventoryReturnRequests,
   getRestockRequests,
+  reviewInventoryReturnRequest,
   receiveDirectStock,
 } from "@/services/inventoryService";
 import {
   IncomingStockTransfer,
   InventoryAdjustmentType,
   InventoryAlert,
+  InventoryReturnRequest,
   InventoryRestockRequest,
   ProductInventory,
 } from "@/types/inventory";
@@ -60,6 +63,7 @@ export default function OwnerInventoryScreen() {
   const [selectedStoreId, setSelectedStoreId] = useState("");
   const [alerts, setAlerts] = useState<InventoryAlert[]>([]);
   const [requests, setRequests] = useState<InventoryRestockRequest[]>([]);
+  const [returnRequests, setReturnRequests] = useState<InventoryReturnRequest[]>([]);
   const [transfers, setTransfers] = useState<IncomingStockTransfer[]>([]);
   const [products, setProducts] = useState<ProductInventory[]>([]);
   const [search, setSearch] = useState("");
@@ -88,15 +92,21 @@ export default function OwnerInventoryScreen() {
           setIsLoading(true);
         }
 
-        const [nextAlerts, nextRequests, nextTransfers, nextProducts] = await Promise.all([
+        const [nextAlerts, nextRequests, nextReturnRequests, nextTransfers, nextProducts] =
+          await Promise.all([
           getInventoryAlerts(token, storeId).catch(() => []),
           getRestockRequests(token, "OPEN", storeId).catch(() => []),
+          getInventoryReturnRequests(token, {
+            status: "ALL",
+            storeId,
+          }).catch(() => []),
           getIncomingTransfers(token, storeId).catch(() => []),
           getProductInventory(token, { limit: 100 }).catch(() => []),
         ]);
 
         setAlerts(nextAlerts);
         setRequests(nextRequests);
+        setReturnRequests(nextReturnRequests);
         setTransfers(nextTransfers);
         setProducts(nextProducts);
       } catch (error) {
@@ -247,6 +257,52 @@ export default function OwnerInventoryScreen() {
         toStoreId: request.storeId._id,
       },
     });
+  };
+
+  const handleReviewReturnRequest = async (
+    request: InventoryReturnRequest,
+    status: "APPROVED" | "REJECTED"
+  ) => {
+    if (!token || processingId) {
+      return;
+    }
+
+    const confirmTitle =
+      status === "APPROVED" ? "Duyệt trả hàng lỗi?" : "Từ chối yêu cầu trả lỗi?";
+    const confirmMessage =
+      status === "APPROVED"
+        ? "Duyệt sẽ loại đúng số lượng hàng lỗi khỏi tồn chi nhánh, không cộng vào kho tổng."
+        : "Từ chối chỉ đóng yêu cầu, không thay đổi tồn kho vì hàng chưa được nhập về kho tổng.";
+
+    Alert.alert(confirmTitle, confirmMessage, [
+      { style: "cancel", text: "Để sau" },
+      {
+        style: status === "APPROVED" ? "default" : "destructive",
+        text: status === "APPROVED" ? "Duyệt" : "Từ chối",
+        onPress: async () => {
+          try {
+            setProcessingId(request._id);
+            const updatedRequest = await reviewInventoryReturnRequest(
+              token,
+              request._id,
+              {
+                status,
+              }
+            );
+            setReturnRequests((current) =>
+              current.map((item) =>
+                item._id === updatedRequest._id ? updatedRequest : item
+              )
+            );
+            await loadInventory(selectedStoreId, "refresh");
+          } catch (error) {
+            Alert.alert("Không xử lý được yêu cầu", getErrorMessage(error));
+          } finally {
+            setProcessingId(null);
+          }
+        },
+      },
+    ]);
   };
 
   const handleInventoryAction = async () => {
@@ -516,6 +572,83 @@ export default function OwnerInventoryScreen() {
                       Manager xác nhận ở chi nhánh đích.
                     </Text>
                   </View>
+                </View>
+              ))
+            )}
+          </View>
+
+          <Text style={styles.sectionTitle}>Yêu cầu trả hàng lỗi</Text>
+          <View style={styles.cardList}>
+            {returnRequests.length === 0 ? (
+              <EmptyPanel text="Không có yêu cầu trả hàng lỗi nào ở cửa hàng đang xem." />
+            ) : (
+              returnRequests.map((request) => (
+                <View key={request._id} style={styles.requestCard}>
+                  <View style={styles.requestHeader}>
+                    <View style={styles.alertCopy}>
+                      <Text style={styles.cardTitle}>{request.productId.name}</Text>
+                      <Text style={styles.cardMeta}>
+                        {request.reasonType} · Báo {request.quantity} · Tồn lúc gửi{" "}
+                        {request.currentAvailableStock}
+                      </Text>
+                    </View>
+                    <View
+                      style={[
+                        styles.readStatusPill,
+                        request.status === "APPROVED"
+                          ? styles.readStatusPillDone
+                          : request.status === "REJECTED"
+                            ? styles.ownerRejectedPill
+                            : null,
+                      ]}
+                    >
+                      <Text
+                        style={[
+                          styles.readStatusText,
+                          request.status === "APPROVED"
+                            ? styles.readStatusTextDone
+                            : request.status === "REJECTED"
+                              ? styles.ownerRejectedText
+                              : null,
+                        ]}
+                      >
+                        {request.status === "PENDING"
+                          ? "Chờ duyệt"
+                          : request.status === "APPROVED"
+                            ? "Đã duyệt"
+                            : "Từ chối"}
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={styles.reasonText}>
+                    Manager gửi: {request.requestedBy.fullName}
+                  </Text>
+                  {request.managerNote ? (
+                    <Text style={styles.reasonText}>{request.managerNote}</Text>
+                  ) : null}
+                  {request.reviewNote ? (
+                    <Text style={styles.helperText}>
+                      Phản hồi kho tổng: {request.reviewNote}
+                    </Text>
+                  ) : null}
+                  {request.status === "PENDING" ? (
+                    <View style={styles.requestActionRow}>
+                      <Pressable
+                        disabled={processingId === request._id}
+                        onPress={() => handleReviewReturnRequest(request, "APPROVED")}
+                        style={styles.primaryInlineButton}
+                      >
+                        <Text style={styles.primaryInlineButtonText}>Duyệt trả</Text>
+                      </Pressable>
+                      <Pressable
+                        disabled={processingId === request._id}
+                        onPress={() => handleReviewReturnRequest(request, "REJECTED")}
+                        style={styles.rejectButton}
+                      >
+                        <Text style={styles.rejectButtonText}>Từ chối</Text>
+                      </Pressable>
+                    </View>
+                  ) : null}
                 </View>
               ))
             )}
@@ -891,6 +1024,8 @@ const styles = StyleSheet.create({
   readStatusPillDone: { backgroundColor: "#eef4ef" },
   readStatusText: { color: "#9a6b13", fontSize: 10, fontWeight: "900" },
   readStatusTextDone: { color: "#2d5a4b" },
+  ownerRejectedPill: { backgroundColor: "#fff1f3" },
+  ownerRejectedText: { color: "#9f2639" },
   reasonText: { color: "#52605a", fontSize: 12, lineHeight: 18, fontWeight: "700" },
   helperText: { color: "#69756f", fontSize: 12, fontWeight: "700" },
   requestActionRow: { flexDirection: "row", gap: 8 },
@@ -914,6 +1049,17 @@ const styles = StyleSheet.create({
     backgroundColor: "#252525",
   },
   primaryInlineButtonText: { color: "#ffffff", fontSize: 12, fontWeight: "900" },
+  rejectButton: {
+    flex: 1,
+    minHeight: 42,
+    alignItems: "center",
+    justifyContent: "center",
+    borderRadius: 8,
+    backgroundColor: "#fff1f3",
+    borderWidth: 1,
+    borderColor: "#f1c5cd",
+  },
+  rejectButtonText: { color: "#9f2639", fontSize: 12, fontWeight: "900" },
   transferCard: {
     gap: 10,
     padding: 14,

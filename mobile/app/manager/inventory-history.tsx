@@ -32,6 +32,7 @@ const receiptSourceLabel: Record<InventoryReceiptSource, string> = {
   DIRECT: "Nhập trực tiếp",
   SALES_REQUEST: "Từ yêu cầu Sales",
   TRANSFER: "Điều chuyển",
+  RETURN_REJECTED: "Hoàn từ yêu cầu lỗi",
 };
 
 const adjustmentTypeLabel: Record<InventoryAdjustmentType, string> = {

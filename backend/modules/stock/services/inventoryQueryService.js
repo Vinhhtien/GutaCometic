@@ -1,6 +1,7 @@
 const Product = require("../../../models/Product");
 const InventoryAdjustment = require("../../../models/InventoryAdjustment");
 const InventoryReceipt = require("../../../models/InventoryReceipt");
+const InventoryReturnRequest = require("../../../models/InventoryReturnRequest");
 const InventoryRequest = require("../../../models/InventoryRequest");
 const Store = require("../../../models/Store");
 const StoreInventory = require("../../../models/StoreInventory");
@@ -14,6 +15,8 @@ const LOW_STOCK_WARNING_THRESHOLD = 10;
 const EXPIRY_WARNING_DAYS = 60;
 const MAX_STOCK_RECEIVE_QUANTITY = 1000;
 const UNIVERSAL_SKIN_TYPE = "Da thường/Mọi loại da";
+
+const RETURN_REQUEST_TYPES = ["DAMAGED", "DEFECTIVE", "EXPIRED", "OTHER"];
 
 const escapeRegExp = (value) => value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
@@ -223,6 +226,14 @@ const populateInventoryRequest = (request) =>
     { path: "requestedBy", select: "fullName email phone role" },
     { path: "handledBy", select: "fullName email phone role" },
     { path: "acknowledgedBy", select: "fullName email phone role" },
+  ]);
+
+const populateInventoryReturnRequest = (request) =>
+  request.populate([
+    { path: "storeId", select: "name address phone type" },
+    { path: "productId", select: "name sku brand category image price" },
+    { path: "requestedBy", select: "fullName email phone role" },
+    { path: "reviewedBy", select: "fullName email phone role" },
   ]);
 
 const createRestockRequest = async ({
@@ -600,6 +611,187 @@ const createInventoryAdjustment = async ({
   });
 };
 
+const getInventoryReturnRequests = async ({
+  status = "ALL",
+  storeId,
+  user,
+}) => {
+  const scopedStoreId = getScopedStoreId(user, storeId);
+  const normalizedStatus = String(status || "ALL").toUpperCase();
+  const query = {};
+
+  if (!["ALL", "PENDING", "APPROVED", "REJECTED"].includes(normalizedStatus)) {
+    throw new AppError(
+      "Return request status is invalid",
+      400,
+      "INVALID_RETURN_REQUEST_STATUS"
+    );
+  }
+
+  if (scopedStoreId) {
+    query.storeId = scopedStoreId;
+  }
+
+  if (normalizedStatus !== "ALL") {
+    query.status = normalizedStatus;
+  }
+
+  return InventoryReturnRequest.find(query)
+    .populate("storeId", "name address phone type")
+    .populate("productId", "name sku brand category image price")
+    .populate("requestedBy", "fullName email phone role")
+    .populate("reviewedBy", "fullName email phone role")
+    .sort({ updatedAt: -1, createdAt: -1 })
+    .lean();
+};
+
+const createInventoryReturnRequest = async ({
+  managerNote,
+  productId,
+  quantity,
+  reasonType,
+  user,
+}) => {
+  const scopedStoreId = getScopedStoreId(user);
+  const normalizedType = String(reasonType || "").toUpperCase();
+  const requestedQuantity = Number.parseInt(quantity, 10);
+
+  if (user.role !== USER_ROLES.MANAGER) {
+    throw new AppError(
+      "Only managers can create faulty return requests",
+      403,
+      "FORBIDDEN"
+    );
+  }
+
+  if (!scopedStoreId) {
+    throw new AppError("Store ID is required", 400, "STORE_ID_REQUIRED");
+  }
+
+  if (!productId) {
+    throw new AppError("Product ID is required", 400, "PRODUCT_ID_REQUIRED");
+  }
+
+  if (!RETURN_REQUEST_TYPES.includes(normalizedType)) {
+    throw new AppError(
+      "Return request reason is invalid",
+      400,
+      "INVALID_RETURN_REQUEST_REASON"
+    );
+  }
+
+  if (!Number.isInteger(requestedQuantity) || requestedQuantity < 1) {
+    throw new AppError(
+      "Returned quantity is invalid",
+      400,
+      "INVALID_RETURN_REQUEST_QUANTITY"
+    );
+  }
+
+  return runInTransaction(async (session) => {
+    const inventory = await StoreInventory.findOne({
+      productId,
+      storeId: scopedStoreId,
+    })
+      .session(session)
+      .lean();
+
+    if (!inventory) {
+      throw new AppError("Inventory item was not found", 404, "INVENTORY_NOT_FOUND");
+    }
+
+    if (requestedQuantity > inventory.availableStock) {
+      throw new AppError(
+        "Returned quantity exceeds the current available stock",
+        400,
+        "RETURN_REQUEST_QUANTITY_EXCEEDS_STOCK",
+        {
+          availableStock: inventory.availableStock,
+          requestedQuantity,
+        }
+      );
+    }
+
+    const [request] = await InventoryReturnRequest.create(
+      [
+        {
+          storeId: scopedStoreId,
+          productId,
+          quantity: requestedQuantity,
+          currentAvailableStock: inventory.availableStock,
+          reasonType: normalizedType,
+          managerNote: managerNote || "",
+          requestedBy: user._id,
+        },
+      ],
+      { session }
+    );
+
+    return populateInventoryReturnRequest(request);
+  });
+};
+
+const reviewInventoryReturnRequest = async ({
+  requestId,
+  reviewNote,
+  status,
+  user,
+}) => {
+  const normalizedStatus = String(status || "").toUpperCase();
+
+  if (user.role !== USER_ROLES.OWNER) {
+    throw new AppError(
+      "Only owners can review faulty return requests",
+      403,
+      "FORBIDDEN"
+    );
+  }
+
+  if (!["APPROVED", "REJECTED"].includes(normalizedStatus)) {
+    throw new AppError(
+      "Review status is invalid",
+      400,
+      "INVALID_RETURN_REQUEST_REVIEW_STATUS"
+    );
+  }
+
+  return runInTransaction(async (session) => {
+    const request = await InventoryReturnRequest.findById(requestId).session(session);
+
+    if (!request) {
+      throw new AppError(
+        "Faulty return request was not found",
+        404,
+        "RETURN_REQUEST_NOT_FOUND"
+      );
+    }
+
+    if (request.status !== "PENDING") {
+      throw new AppError(
+        "This faulty return request has already been reviewed",
+        409,
+        "RETURN_REQUEST_CLOSED"
+      );
+    }
+
+    if (normalizedStatus === "APPROVED") {
+      await inventoryMutationService.writeOffStock(
+        request.storeId,
+        [{ productId: request.productId, quantity: request.quantity }],
+        session
+      );
+    }
+
+    request.status = normalizedStatus;
+    request.reviewNote = reviewNote || "";
+    request.reviewedBy = user._id;
+    request.reviewedAt = new Date();
+    await request.save({ session });
+
+    return populateInventoryReturnRequest(request);
+  });
+};
+
 const getInventoryAdjustments = async ({ storeId, user }) => {
   const scopedStoreId = getScopedStoreId(user, storeId);
   const query = {};
@@ -634,19 +826,31 @@ const getInventoryReceipts = async ({ storeId, user }) => {
     .lean();
 };
 
-const getIncomingTransfers = async ({ storeId, user }) => {
+const getIncomingTransfers = async ({ status = "PENDING", storeId, user }) => {
   const scopedStoreId = getScopedStoreId(user, storeId);
+  const normalizedStatus = String(status || "PENDING").toUpperCase();
 
   if (!scopedStoreId) {
     throw new AppError("Store ID is required", 400, "STORE_ID_REQUIRED");
   }
 
-  return StockTransfer.find({ toStoreId: scopedStoreId, status: "PENDING" })
+  if (!["ALL", "PENDING", "CONFIRMED", "CANCELLED"].includes(normalizedStatus)) {
+    throw new AppError("Transfer status is invalid", 400, "INVALID_TRANSFER_STATUS");
+  }
+
+  const query = { toStoreId: scopedStoreId };
+
+  if (normalizedStatus !== "ALL") {
+    query.status = normalizedStatus;
+  }
+
+  return StockTransfer.find(query)
     .populate("fromStoreId", "name address phone type")
     .populate("toStoreId", "name address phone type")
     .populate("items.productId", "name sku brand category image price")
     .populate("createdBy", "fullName email phone role")
-    .sort({ createdAt: -1 })
+    .populate("confirmedBy", "fullName email phone role")
+    .sort({ updatedAt: -1, createdAt: -1 })
     .lean();
 };
 
@@ -677,6 +881,11 @@ const confirmIncomingTransfer = async ({ transferId, user }) =>
       throw new AppError("This stock transfer is already closed", 409, "TRANSFER_CLOSED");
     }
 
+    const sourceStore = await Store.findById(transfer.fromStoreId)
+      .select("name")
+      .session(session)
+      .lean();
+
     await inventoryMutationService.receiveStock(
       transfer.toStoreId,
       transfer.items,
@@ -689,7 +898,9 @@ const confirmIncomingTransfer = async ({ transferId, user }) =>
         productId: item.productId,
         quantity: item.quantity,
         source: "TRANSFER",
-        note: "Received from stock transfer",
+        note: sourceStore?.name
+          ? `Received from stock transfer: ${sourceStore.name}`
+          : "Received from stock transfer",
         referenceId: transfer._id,
         receivedBy: user._id,
       })),
@@ -713,14 +924,17 @@ module.exports = {
   acknowledgeRestockRequest,
   confirmIncomingTransfer,
   createInventoryAdjustment,
+  createInventoryReturnRequest,
   createRestockRequest,
   getIncomingTransfers,
   getInventoryAdjustments,
   getInventoryReceipts,
+  getInventoryReturnRequests,
   getInventoryAlerts,
   getProductInventory,
   getRestockRequests,
   receiveDirectStock,
   receiveRestockRequest,
+  reviewInventoryReturnRequest,
   updateRestockRequestStatus,
 };
